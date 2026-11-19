@@ -1,0 +1,100 @@
+/* Real identity/permissions are checked on the server on every request.
+   The legacy demo role only controls fictional local operations. */
+(()=>{
+ const user=DebugContext.user;
+ const roles={system_admin:'代表',classroom_manager:'教室長',assistant_manager:'講師',teacher:'講師'};
+ const teacher=db.teachers.find(t=>t.role===roles[user.role])||db.teachers[0];
+ const account=db.loginAccounts.find(a=>a.teacherId===teacher.id);
+ if(account)v13LoginSuccess(account,'Web認証済み・架空の操作役');
+ v13CloseBoard();
+ const originalLogout=v13Logout;
+ const el=(tag,text,attrs={})=>{const n=document.createElement(tag);if(text)n.textContent=text;for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);return n;};
+ const manager=['system_admin','classroom_manager'].includes(user.role);
+ const labels={open:'未対応',in_progress:'対応中',fixed:'修正済み',closed:'確認完了'};
+ let halted=false,checking=false;
+ function halt(message){if(halted)return;halted=true;DebugContext.locked=true;const mask=el('div',null,{class:'debug-mask'});mask.append(el('h1','操作を停止しました'),el('p',message));const b=el('button','ログインし直す');b.onclick=()=>location.assign(DebugContext.loginURL||'./');mask.append(b);document.body.replaceChildren(mask);}
+ const request=(path,method='GET',body)=>DebugContext.request?DebugContext.request(path,method,body):fetch('./api/'+path,{method,cache:'no-store',redirect:'error',headers:method==='GET'?{}:{'Content-Type':'application/json','X-Manabi-Request':'1'},body:body?JSON.stringify(body):undefined});
+ async function api(path,method='GET',body){
+  const r=await request(path,method,body);
+  if(r.status===401||r.status===403){halt('認証が切れたか、利用許可が変更されました。端末データは残っています。');throw Error('利用許可を確認してください。');}
+  const out=await r.json();if(!r.ok)throw Error(out.message||'送信できませんでした。入力内容を保ったまま再試行できます。');return out;
+ }
+ async function logout(){try{await api('logout','POST',{});if(DebugContext.signOut)await DebugContext.signOut();halt('ログアウトしました。');location.assign(DebugContext.loginURL||'./');}catch(e){toast('ログアウトを完了できません。回線を確認して再試行してください。');}}
+ v13Logout=logout;
+ const bar=el('section',null,{class:'debug-bar','aria-label':'非公開デバッグ'});
+ bar.append(el('span','非公開テスト｜架空データのみ。端末ごとに独立・自動共有なし。ブラウザデータ削除で消えます。'));
+ function button(text,fn){const b=el('button',text,{type:'button',class:'btn small'});b.onclick=fn;return b;}
+ bar.append(button('不具合を報告',report),button(manager?'報告を管理':'自分の報告',()=>listReports(0)),button('バックアップ・復元',backups),button('操作役を試す',()=>{originalLogout();document.getElementById('v13-login-title').textContent='架空データの操作役を選択';}),button('ログアウト',logout));
+ const main=document.getElementById('content');main.parentNode.insertBefore(bar,main);
+ const identity=el('small','利用者：'+user.name+' ／ 画面内の講師切替・ログインIDは架空データの操作確認用です。');bar.append(identity);
+ function dialog(title){const d=el('dialog',null,{class:'debug-dialog'});d.append(el('h2',title));const close=button('閉じる',()=>d.close());d.append(close);d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal();return d;}
+ function field(form,name,title,value='',type='textarea'){const label=el('label',title);const input=el(type==='textarea'?'textarea':'input',null,{name});if(type!=='textarea')input.type=type;input.required=true;input.value=value;input.maxLength=name==='screen'?160:4000;if(type==='textarea')input.rows=3;label.append(input);form.append(label);return input;}
+ function report(){
+  const d=dialog('不具合を報告'),form=el('form');d.append(form);
+  form.append(el('p','この報告文と添付画像だけを共有します。生徒・授業の端末データは送信しません。',{class:'debug-notice'}));
+  field(form,'screen','発生した画面',document.querySelector('#content h1')?.textContent||state.page,'text');
+  field(form,'description','不具合の内容');field(form,'expected','本来期待していた動作');field(form,'actual','実際に起こった動作');field(form,'steps','再現手順');
+  const local=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
+  field(form,'occurred_at','発生日時',local,'datetime-local');
+  const input=el('input',null,{type:'file',accept:'image/png,image/jpeg'}),label=el('label','画像（任意・PNG/JPEG、2MB以内）');label.append(input);form.append(label);
+  const hint=el('p','画像を確認し、名前など残したくない部分をドラッグして黒塗りしてください。実在する生徒の画像は添付禁止です。');form.append(hint);
+  const canvas=el('canvas');canvas.hidden=true;form.append(canvas);let imageReady=false,start;
+  const confirmed=el('input',null,{type:'checkbox',required:''}),check=el('label','報告文と画像に実在する生徒の個人情報がなく、架空データだけであることを確認しました。');check.prepend(confirmed);form.append(check);
+  const status=el('p','',{class:'debug-status',role:'status'});form.append(status);
+  input.onchange=async()=>{imageReady=false;canvas.hidden=true;confirmed.checked=false;const f=input.files[0];if(!f)return;
+   if(!['image/png','image/jpeg'].includes(f.type)||f.size>2*1024*1024){status.textContent='PNG/JPEGの2MB以内の画像を選択してください。';input.value='';return;}
+   const url=URL.createObjectURL(f);try{const img=new Image();img.src=url;await img.decode();if(img.width*img.height>20000000)throw Error('大きすぎる画像です。');const scale=Math.min(1,1200/img.width,1200/img.height);canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);canvas.hidden=false;imageReady=true;status.textContent='画像を確認し、必要な部分を黒塗りしてください。';}catch{status.textContent='画像を読み込めませんでした。';input.value='';}finally{URL.revokeObjectURL(url);}
+  };
+  const point=e=>{const r=canvas.getBoundingClientRect();return [(e.clientX-r.left)*canvas.width/r.width,(e.clientY-r.top)*canvas.height/r.height];};
+  canvas.onpointerdown=e=>{start=point(e);canvas.setPointerCapture(e.pointerId);confirmed.checked=false;};
+  canvas.onpointerup=e=>{if(!start)return;const end=point(e),ctx=canvas.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(Math.min(start[0],end[0]),Math.min(start[1],end[1]),Math.max(10,Math.abs(start[0]-end[0])),Math.max(10,Math.abs(start[1]-end[1])));start=null;};
+  const send=el('button','報告を送信',{type:'submit',class:'btn primary'});form.append(send);
+  form.onsubmit=async e=>{e.preventDefault();send.disabled=true;try{
+   const data=Object.fromEntries(new FormData(form));data.occurred_at=new Date(data.occurred_at).toISOString();data.fictional_confirmed=confirmed.checked;
+   data.screenshot=imageReady?canvas.toDataURL('image/jpeg',0.65).split(',')[1]:null;
+   if(data.screenshot?.length>600000)throw Error('画像が大きすぎます。小さな画像を選び直してください。');
+   await api('reports','POST',data);d.close();toast('不具合報告を保存しました。');
+  }catch(err){status.textContent=err.message;}finally{send.disabled=false;}};
+ }
+ async function listReports(offset){
+  const d=dialog(manager?'不具合報告の管理':'自分の不具合報告'),status=el('p','読み込み中…',{role:'status'});d.append(status);
+  try{const [rows,users]=await Promise.all([api('reports?offset='+offset),manager?api('users'):Promise.resolve([user])]);status.textContent=rows.length?`${offset+1}〜${offset+rows.length}件`:'報告はありません。';
+   const names=Object.fromEntries(users.map(u=>[u.id,u.display_name||u.name]));
+   for(const row of rows){const item=el('details');item.append(el('summary',labels[row.status]+'｜'+row.screen+'｜'+row.description.slice(0,70)));item.append(el('p',new Date(row.occurred_at).toLocaleString('ja-JP')+' ／ '+(names[row.reporter_id]||'利用者')));
+    for(const[k,title]of [['description','内容'],['expected','期待'],['actual','実際'],['steps','手順'],['device','端末']]){item.append(el('b',title),el('pre',row[k]));}
+    const imageButton=button('添付画像を確認',async()=>{try{const r=await request('reports/'+row.id+'/image');if(!r.ok)throw Error('添付画像がないか、閲覧できません。');const url=URL.createObjectURL(await r.blob()),img=el('img',null,{src:url,alt:'確認済みの架空データの添付画像'});item.append(img);imageButton.disabled=true;d.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});}catch(e){toast(e.message);}});item.append(imageButton);
+    if(manager){const select=el('select',null,{'aria-label':'対応状況'});for(const[k,v]of Object.entries(labels)){const o=el('option',v,{value:k});select.append(o);}select.value=row.status;const save=button('対応状況を保存',async()=>{save.disabled=true;try{await api('reports/'+row.id,'PATCH',{status:select.value});item.querySelector('summary').textContent=labels[select.value]+'｜'+row.screen+'｜'+row.description.slice(0,70);toast('対応状況を保存しました。');}catch(e){status.textContent=e.message;}finally{save.disabled=false;}});item.append(select,save);}
+    d.append(item);
+   }
+   if(offset>0)d.append(button('前の50件',()=>{d.close();listReports(Math.max(0,offset-50));}));if(rows.length===50)d.append(button('次の50件',()=>{d.close();listReports(offset+50);}));
+  }catch(e){status.textContent=e.message;}
+ }
+ function download(value,name){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'})),a=el('a',null,{href:url,download:name});a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ const keys=['llld_manabi_mock_v9_local_demo','llld_manabi_v9_ui','llld_manabi_v9_forms','llld_manabi_v9_reports','llld_manabi_v9_view','llld_manabi_mock_v6_exam_qualification','llld_manabi_mock_v5_all_students_ten_lessons','llld_manabi_v9_controls','llld_manabi_v11_view'];
+ function snapshot(){captureVisibleEditors();persist();const entries={};for(const key of keys){const value=DebugStorage.getItem(key);if(value!==null)entries[key]=JSON.parse(value);}return {format:'manabi-debug-backup',version:1,created_at:new Date().toISOString(),entries};}
+ function validateBackup(value){
+  if(value?.format!=='manabi-debug-backup'||value.version!==1||!value.entries||Array.isArray(value.entries)||typeof value.entries!=='object')throw Error('このデバッグ版の全体バックアップを選択してください。');
+  if(Object.keys(value.entries).some(k=>!keys.includes(k)))throw Error('対応していない保存領域です。');
+  const record=value.entries[keys[0]];if(record?.version!==1||!Array.isArray(record.students)||!Array.isArray(record.lessons)||!Array.isArray(record.teachers))throw Error('記録の形式を確認できません。');
+  const walk=x=>{if(!x||typeof x!=='object')return;for(const[k,v]of Object.entries(x)){if(['__proto__','constructor','prototype'].includes(k))throw Error('使用できないキーが含まれています。');walk(v);}};walk(value);
+  for(const s of record.students)if(typeof s.id!=='string'||!/^[-\w]+$/.test(s.id)||!Array.isArray(s.subjects))throw Error('生徒データの形式が不正です。');
+  return value.entries;
+ }
+ function backups(){const d=dialog('バックアップ・復元');d.append(el('p','この利用者・この端末の全保存領域が対象です。実在する生徒のデータは取り込まないでください。'));
+  d.append(button('全体JSONを保存',()=>{download(snapshot(),'manabi_debug_backup_'+localDate()+'.json');toast('下書き・設定を含めて書き出しました。');}));
+  const input=el('input',null,{type:'file',accept:'.json,application/json'}),label=el('label','全体JSONから復元（現在データを上書き）');label.append(input);d.append(label);
+  input.onchange=async()=>{try{const f=input.files[0];if(!f)return;if(f.size>8*1024*1024)throw Error('8MB以内のJSONを選択してください。');const entries=validateBackup(JSON.parse(await f.text()));if(!confirm('架空データだけのJSONであることを確認しましたか？ 現在データをバックアップしてから上書き復元します。'))return;
+   const before=snapshot();download(before,'manabi_before_restore_'+Date.now()+'.json');
+   try{for(const key of keys)DebugStorage.removeItem(key);for(const[key,value]of Object.entries(entries))DebugStorage.setItem(key,JSON.stringify(value));}catch(error){for(const key of keys)DebugStorage.removeItem(key);for(const[key,value]of Object.entries(before.entries))DebugStorage.setItem(key,JSON.stringify(value));throw error;}
+   DebugContext.locked=true;location.reload();
+  }catch(e){toast('復元できません：'+e.message);}};
+  d.append(button('架空データの初期状態に戻す',()=>{if(!confirm('現在データをJSON保存してから、この利用者・端末の架空データと下書き・設定を初期化しますか？'))return;download(snapshot(),'manabi_before_reset_'+Date.now()+'.json');for(const key of keys)DebugStorage.removeItem(key);DebugContext.locked=true;location.reload();}));
+ }
+ // The original reset button now resets all relevant storage, using the same safe workflow.
+ resetDemo=()=>backups();
+ async function check(){if(checking||halted)return;checking=true;try{const latest=await api('me');if(latest.role!==user.role)halt('利用権限が変更されました。再読み込みしてください。');}catch{if(!halted)halt('利用許可を確認できません。回線を確認して再読み込みしてください。');}finally{checking=false;}}
+ setInterval(check,60000);window.addEventListener('focus',check);window.addEventListener('pageshow',e=>{if(e.persisted)check();});
+ window.addEventListener('storage',e=>{if(e.key?.startsWith('manabi_debug:'+user.id+':'))halt('別の画面で保存内容が変更されました。再読み込みしてください。');});
+ // Exposed only for local DOM tests; no server secrets or privileges.
+ window.ManabiDebug={validateBackup,snapshot};
+})();

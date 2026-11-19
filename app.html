@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://vlkzogdpfmnyderdnslc.supabase.co; base-uri 'none'; form-action 'self'; object-src 'none'; worker-src 'none'">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>学びのスキルカルテ v9｜授業報告と印刷改善</title>
+<link rel="stylesheet" href="./assets/app.css"><link rel="stylesheet" href="./assets/debug.css">
+<style>
+.v6-home-alert{display:flex;justify-content:space-between;align-items:center;gap:16px;border-left:4px solid var(--brand);margin-bottom:18px;background:#f6faf7!important}
+.v6-home-alert p{margin-top:4px}.v6-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0 18px}.v6-tiles>div{background:white;border:1px solid var(--line);border-radius:11px;padding:15px}.v6-tiles span{font-size:11px;color:var(--sub);display:block}.v6-tiles strong{font-size:26px;color:var(--brand);margin-right:6px}.v6-tiles small{font-size:11px;color:var(--sub)}
+.v6-tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin:16px 0 18px;padding-bottom:8px}.v6-tabs button{padding:10px 15px;white-space:nowrap;border-radius:8px;color:var(--sub);font-weight:650;font-size:12px}.v6-tabs button:hover{background:#edf3ef}.v6-tabs button.active{background:var(--brand);color:white}
+.v6-hint-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.v6-steps>div{padding:11px 5px;border-bottom:1px solid var(--line)}.v6-steps>div:last-child{border-bottom:0}.v6-steps b{font-size:13px}.v6-steps p{font-size:12px;color:var(--sub);margin-top:3px}
+.v6-mini-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.v6-mini-stats div{background:#f4f7f2;border-radius:9px;padding:7px 13px;display:flex;gap:12px;align-items:center}.v6-mini-stats span{font-size:11px;color:var(--sub)}.v6-mini-stats b{font-size:14px}.v6-profile-exam-list{margin:12px 0}.v6-profile-exam-list>div{padding:7px 0;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:9px;font-size:12px}.v6-profile-exam-list>div:last-child{border:0}.v6-roster-buttons{padding-left:5px}.v6-term-qual{font-size:10px;border:1px solid #dae5df;border-radius:6px;margin-top:7px;padding:6px 8px;display:flex;align-items:flex-start;gap:9px}.v6-term-qual b{color:#245d50;white-space:nowrap}.v6-term-qual span{line-height:1.55;overflow-wrap:anywhere}
+.v6-print-paper{font-size:10px}.v6-print-paper .v6-print-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #2a6653;margin-bottom:13px;padding-bottom:10px}.v6-print-paper h1{font-size:20px}.v6-print-paper .v6-print-head>div{font-size:10px;text-align:right}.v6-print-paper table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10px}.v6-print-paper th,.v6-print-paper td{border:1px solid #dae3df;padding:6px 5px;word-break:break-word}.v6-print-paper th{background:#eaf2ee}.v6-print-paper .v6-foot{font-size:9px;color:#777;margin-top:15px}
+@media(max-width:900px){.v6-home-alert{flex-direction:column;align-items:stretch}.v6-tiles{grid-template-columns:repeat(2,1fr)}.v6-hint-grid{grid-template-columns:1fr}.v6-mini-stats>div{flex:1}}
+@media print{@page{size:A4;margin:12mm 11mm}#print-root .v6-print-paper{font-size:9pt;break-after:page}#print-root .v6-print-paper:last-child{break-after:auto}#print-root .v6-print-paper th,#print-root .v6-print-paper td{padding:4.5pt 4pt;font-size:8pt}#print-root .v6-term-qual{font-size:8pt}}
+/* v8 UI */
+.v8-sortbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0;padding:9px 12px;background:#f1f5ef;border:1px solid var(--line);border-radius:9px}
+.v8-sortbar select{min-height:34px;font-size:12px}
+.v8-recent-tools{display:flex;align-items:center;gap:10px;margin:12px 0}
+.v8-recent-tools select{min-width:200px}
+.v8-slot-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.v8-slot-tabs button{font-weight:700;min-width:46px;border:1px solid #d1ded4;background:white;border-radius:8px;padding:7px 11px}
+.v8-slot-tabs button small{font-weight:400;font-size:9px;display:block;color:#718178}
+.v8-slot-tabs button.active{border-color:#2a7861;background:#e5f1ea;color:#175643}
+.v8-daily-actions{margin-bottom:14px}.v8-daily-entries{display:flex;flex-direction:column;gap:14px}
+.v8-time-group{border:1px solid var(--line);background:#f8faf7;border-radius:12px;overflow:hidden}
+.v8-time-head{display:flex;justify-content:space-between;align-items:center;background:#e5eee7;color:#215441;padding:11px 16px;font-size:13px}
+.v8-daily-card{margin:12px;border:1px solid var(--line);border-radius:11px;background:#fff;padding:14px 16px}
+.v8-daily-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;border-bottom:1px solid #edf0ea;padding-bottom:9px}
+.v8-check{min-width:28px;display:flex;align-items:center;cursor:pointer}
+.v8-daily-body{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:11px;padding-top:12px;font-size:12px}
+.v8-daily-body>div{min-width:0;overflow-wrap:anywhere}.v8-daily-body strong{display:block;color:#5c776b;font-size:10px;margin-bottom:4px}
+.v8-daily-body p{margin-top:3px;line-height:1.65}
+.v8-incomplete{background:#fbf7eb;padding:7px 10px;font-size:11px;color:#88662d;border-radius:7px;margin-top:8px}
+.v8-bulk-table select{width:100%;min-width:110px}
+.v8-barcode-grade .v8-grade-title{color:#176148}
+.v8-restored{margin-bottom:12px;border-radius:8px;padding:9px 12px;background:#eaf3e8;color:#305d45;font-size:12px}
+@media (max-width: 1200px){.v8-daily-body{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width: 740px){.v8-daily-body{grid-template-columns:1fr}.v8-daily-head{align-items:flex-start}.v8-daily-card{padding:10px;margin:8px}.v8-sortbar{gap:5px}}
+@media print{.v8-barcode-grade{break-after:page;page-break-after:always}.v8-barcode-grade:last-child{break-after:auto;page-break-after:auto}.v8-barcode-grade .scan-label-grid{break-inside:avoid}}
+
+
+
+.v8-day-divider{display:flex;align-items:center;justify-content:space-between;background:#e8eee8;color:#245540;border-radius:9px;padding:12px 16px;margin:12px 0;font-size:14px}
+.v8-empty-slot{padding:12px 16px;font-size:12px;color:#7d8880}.v8-slot-more{margin:0 12px 12px}.v8-time-group{margin-bottom:12px}
+
+
+
+/* v10: next-lesson teaching materials / undecided exception */
+.v10-next-scope .v10-decision {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:11px 0 12px;padding:11px 13px;background:#f4f8f4;border:1px solid #dce8dd;border-radius:9px}
+.v10-next-scope .v10-decision label {display:flex;align-items:center;gap:9px;font-size:13px;font-weight:700;cursor:pointer}
+.v10-next-scope .v10-decision input {width:18px;height:18px;accent-color:var(--brand)}
+.v10-next-scope .v10-decision .small {display:block;max-width:360px;font-size:11px;line-height:1.5;color:var(--sub)}
+.v10-next-scope.v10-is-undecided .v7-row,.v10-next-scope.v10-is-undecided button.v10-next-add {display:none!important}
+.v10-next-scope.v10-is-undecided .v10-undecided-info {display:block}
+.v10-undecided-info {display:none;color:#476253;font-weight:650;font-size:12px;padding:9px 12px;border-radius:7px;background:#e8f2eb}
+.v10-next-scope.v10-next-missing {border:1.5px solid #cb8b42!important;background:#fffbf4}
+.v10-next-scope.v10-next-missing .v10-decision {background:#fff5e4;border-color:#efcf9c}
+.v10-next-scope .v10-next-asterisk {font-size:11px;font-weight:700;color:#a66b21}
+.v10-next-scope .v10-next-summary {margin-top:8px;font-size:11px;color:#765e37}
+.v10-next-scope .v10-next-summary.good {color:#267057}
+.v10-next-scope .v7-row input.v9-required-empty {background:#fff0e6;border:1.5px solid #d69759}
+.v10-next-scope .v7-row input.v9-required-empty:focus {outline:2px solid #e5ba76}
+.gakupro-entry .v10-plan-in-print {font-size:8px;color:#445849;line-height:1.3;border-top:1px dotted #d6dfd6;padding:2px 4px;max-height:29px;overflow:hidden}
+.gakupro-entry .v10-plan-in-print strong{font-weight:700}
+@media(max-width:720px){.v10-next-scope .v10-decision{flex-direction:column}}
+
+/* v15 teacher-history panel: no changes to existing print layouts */
+.v15-instructor-card{margin:12px 0 17px;padding:17px 19px!important;border:1px solid #d6e2d8!important}
+.v15-instructor-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px}
+.v15-instructor-head h2{font-size:17px;margin:1px 0 0}
+.v15-instructor-toolbar{display:flex;align-items:end;flex-wrap:wrap;gap:10px 15px;margin-bottom:12px}
+.v15-instructor-toolbar .field{min-width:128px}
+.v15-instructor-toolbar .field select{max-width:245px}
+.v15-instructor-toolbar .segmented{align-self:end}
+.v15-instructor-stats{display:flex;align-items:center;flex-wrap:wrap;gap:8px 20px;margin-bottom:13px;font-size:12px;color:#516b5c}
+.v15-instructor-stats b{font-size:19px;color:#193c36;margin-right:3px}
+.v15-instructor-stats .v15-attention{color:#996127}
+.v15-instructor-stats .v15-attention b{color:#996127}
+.v15-instructor-stats .v15-clarify{font-size:11px;color:#667a70;margin-left:auto}
+.v15-teacher-table{min-width:825px;font-size:12px}
+.v15-teacher-table th{font-size:11px;padding:8px 10px}
+.v15-teacher-table td{padding:9px 10px}
+.v15-teacher-table .v15-slot b{font-size:16px;color:#255b4b}
+.v15-student-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:3px 9px;margin:7px 0 0;font-size:11px}
+.v15-student-list .v15-subject{color:#74847b;font-size:10px;margin-left:6px}
+.v15-teacher-table .v15-count{font-weight:700;color:#285c4b}
+.v15-no-lesson{background:#fbfcfa}
+.v15-no-lesson .v15-count{color:#89978c}
+.v15-missing{color:#a16b29;font-size:10px;margin-top:6px;line-height:1.5}
+.v15-more{text-align:center;padding:13px 0 1px}
+.v15-footnote{font-size:11px;color:#677b6b;margin-top:11px}
+.v15-period-lesson{padding:14px 0;border-bottom:1px solid #e5ece7}
+.v15-period-lesson:last-child{border-bottom:none}
+.v15-period-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px;margin-top:10px}
+.v15-period-fields b{font-size:10px;color:#62776b}
+.v15-period-fields p{font-size:12px;line-height:1.65}
+@media(max-width:950px){.v15-instructor-card{padding:14px!important}.v15-instructor-stats .v15-clarify{margin-left:0}}
+@media(max-width:600px){.v15-instructor-head{align-items:flex-start;flex-wrap:wrap}.v15-instructor-toolbar{gap:9px}.v15-instructor-toolbar .field{flex:1;min-width:135px}.v15-instructor-toolbar .segmented{width:100%}.v15-instructor-toolbar .segmented button{flex:1;font-size:11px;padding:6px 7px}.v15-period-fields{grid-template-columns:1fr}}
+
+.v15-instructor-card .tablewrap{max-height:338px;overflow:auto;overscroll-behavior:contain}
+.v15-instructor-card .v15-teacher-table thead{position:sticky;top:0;z-index:1}
+.v15-instructor-card .v15-teacher-table th{background:#f4f7f1}
+.v15-instructor-card.is-folded .v15-instructor-toolbar,.v15-instructor-card.is-folded .v15-instructor-stats,.v15-instructor-card.is-folded .tablewrap,.v15-instructor-card.is-folded .v15-more,.v15-instructor-card.is-folded .v15-footnote{display:none}
+.v15-instructor-card.is-folded{padding-top:11px!important;padding-bottom:11px!important}
+.v15-instructor-card.is-folded .v15-instructor-head{margin:0}
+
+</style>
+<meta name="robots" content="noindex,nofollow,noarchive"></head>
+<body>
+<div id="app">
+<aside class="sidebar"><div class="brand"><div class="brandmark"><svg width="25" height="25" viewBox="0 0 30 30" fill="none" stroke="currentColor"><path d="M15 2 27 9v13l-12 6L3 22V9Z"/><path d="m15 7 8 5-2 8-9 3-5-9Z" stroke-width="1.6"/><path d="M15 2v26M3 9l24 13M27 9 3 22" opacity=".3"/></svg></div><div><div class="brandname">学びの<br>スキルカルテ</div><div class="brandnote">LLLD / LEARNING</div></div></div><div class="navlabel">WORKSPACE</div><nav class="navlinks" id="nav"></nav><div class="sidebar-foot"><div class="demo-block"><b>操作確認用モック</b><br>架空の生徒・授業データです。<br>本番の個人情報は入力しないでください。</div><div class="tiny muted" style="padding-top:14px">電子学プロ / Prototype 0.2</div></div></aside>
+<div class="main"><header class="topbar"><div class="row"><span class="badge green">教室内ワークスペース</span><span class="small muted">仁保教室・広島大州教室</span></div><div class="actor"><span class="tiny muted">操作ユーザー（認証なし）</span><select id="actor" aria-label="操作ユーザー"><option>教室長（デモ）</option><option>講師 A（デモ）</option><option>講師 B（デモ）</option><option>代表（デモ）</option></select><span class="badge amber">DEMO</span></div></header><div class="demo-ribbon"><span class="demo-dot"></span><span>ブラウザ内の操作モックです。AI接続・複数端末共有・自動バックアップは未実装です。</span></div><main class="content" id="content"></main></div>
+</div>
+<dialog id="modal" aria-labelledby="modal-title"><div class="dialoghead"><h2 id="modal-title"></h2><button class="close" aria-label="閉じる" onclick="closeModal()">×</button></div><div class="dialogbody" id="modal-body"></div></dialog>
+<dialog id="picker-dialog" aria-labelledby="picker-title"><div class="dialoghead"><h2 id="picker-title"></h2><button class="close" aria-label="閉じる" onclick="closePicker()">×</button></div><div class="dialogbody" id="picker-body"></div></dialog>
+<div class="toast" id="toast" role="status"></div><div id="print-root"></div>
+<script src="./assets/dompurify.min.js"></script><script src="./assets/handler-patterns.js"></script><script src="./assets/dom-guard.js"></script><script src="./assets/public-config.js"></script><script src="./assets/auth-client.js"></script><script src="./assets/bootstrap.js"></script>
+</body>
+</html>
