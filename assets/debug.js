@@ -1,11 +1,11 @@
 /* Real identity/permissions are checked on the server on every request.
-   The legacy demo role only controls fictional local operations. */
+   The server-verified staff identity controls the shared fictional workspace. */
 (()=>{
  const user=DebugContext.user;
  const roles={system_admin:'代表',classroom_manager:'教室長',assistant_manager:'講師',teacher:'講師'};
- const teacher=db.teachers.find(t=>t.role===roles[user.role])||db.teachers[0];
+ const teacher=db.teachers.find(t=>t.id===user.teacher_id)||db.teachers.find(t=>t.role===roles[user.role])||db.teachers[0];
  const account=db.loginAccounts.find(a=>a.teacherId===teacher.id);
- if(account)v13LoginSuccess(account,'Web認証済み・架空の操作役');
+ if(account)v13LoginSuccess(account,window.ManabiShared?'バーコード':'Web認証済み・架空の操作役');
  v13CloseBoard();
  const originalLogout=v13Logout;
  const el=(tag,text,attrs={})=>{const n=document.createElement(tag);if(text)n.textContent=text;for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);return n;};
@@ -19,19 +19,19 @@
   if(r.status===401||r.status===403){halt('認証が切れたか、利用許可が変更されました。端末データは残っています。');throw Error('利用許可を確認してください。');}
   const out=await r.json();if(!r.ok)throw Error(out.message||'送信できませんでした。入力内容を保ったまま再試行できます。');return out;
  }
- async function logout(){try{await api('logout','POST',{});if(DebugContext.signOut)await DebugContext.signOut();halt('ログアウトしました。');location.assign(DebugContext.loginURL||'./');}catch(e){toast('ログアウトを完了できません。回線を確認して再試行してください。');}}
+ async function logout(){try{if(window.ManabiShared){await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error();}await api('logout','POST',{});if(DebugContext.signOut)await DebugContext.signOut();halt('ログアウトしました。');location.assign(DebugContext.loginURL||'./');}catch(e){toast('ログアウトを完了できません。回線を確認して再試行してください。');}}
  v13Logout=logout;
  const bar=el('section',null,{class:'debug-bar','aria-label':'非公開デバッグ'});
- bar.append(el('span','非公開テスト｜架空データのみ。端末ごとに独立・自動共有なし。ブラウザデータ削除で消えます。'));
+ bar.append(el('span',window.ManabiShared?'共同デバッグ｜架空データを講師間で共有しています。':'非公開テスト｜架空データのみ。端末ごとに独立・自動共有なし。ブラウザデータ削除で消えます。'));
  function button(text,fn){const b=el('button',text,{type:'button',class:'btn small'});b.onclick=fn;return b;}
- bar.append(button('不具合を報告',report),button(manager?'報告を管理':'自分の報告',()=>listReports(0)),button('バックアップ・復元',backups),button('操作役を試す',()=>{originalLogout();document.getElementById('v13-login-title').textContent='架空データの操作役を選択';}),button('ログアウト',logout));
+ bar.append(button('不具合を報告',report),button(manager?'報告を管理':'自分の報告',()=>listReports(0)),button('バックアップ・復元',backups),button(window.ManabiShared?'講師を切り替える':'操作役を試す',async()=>{if(window.ManabiShared){try{await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error('未送信の入力を先に確認してください。');await api('logout','POST',{});ManabiAuth.clearStaff();location.assign('./');}catch(e){toast(e.message);}return;}originalLogout();document.getElementById('v13-login-title').textContent='架空データの操作役を選択';}),button('ログアウト',logout));
  const main=document.getElementById('content');main.parentNode.insertBefore(bar,main);
- const identity=el('small','利用者：'+user.name+' ／ 画面内の講師切替・ログインIDは架空データの操作確認用です。');bar.append(identity);
+ const identity=el('small','利用者：'+user.name+(window.ManabiShared?' ／ バーコードでログイン中':' ／ 画面内の講師切替・ログインIDは架空データの操作確認用です。'));bar.append(identity);
  function dialog(title){const d=el('dialog',null,{class:'debug-dialog'});d.append(el('h2',title));const close=button('閉じる',()=>d.close());d.append(close);d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal();return d;}
  function field(form,name,title,value='',type='textarea'){const label=el('label',title);const input=el(type==='textarea'?'textarea':'input',null,{name});if(type!=='textarea')input.type=type;input.required=true;input.value=value;input.maxLength=name==='screen'?160:4000;if(type==='textarea')input.rows=3;label.append(input);form.append(label);return input;}
  function report(){
   const d=dialog('不具合を報告'),form=el('form');d.append(form);
-  form.append(el('p','この報告文と添付画像だけを共有します。生徒・授業の端末データは送信しません。',{class:'debug-notice'}));
+  form.append(el('p',window.ManabiShared?'不具合の内容と、必要な画像を共有します。':'この報告文と添付画像だけを共有します。生徒・授業の端末データは送信しません。',{class:'debug-notice'}));
   field(form,'screen','発生した画面',document.querySelector('#content h1')?.textContent||state.page,'text');
   field(form,'description','不具合の内容');field(form,'expected','本来期待していた動作');field(form,'actual','実際に起こった動作');field(form,'steps','再現手順');
   const local=new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -60,7 +60,7 @@
   const d=dialog(manager?'不具合報告の管理':'自分の不具合報告'),status=el('p','読み込み中…',{role:'status'});d.append(status);
   try{const [rows,users]=await Promise.all([api('reports?offset='+offset),manager?api('users'):Promise.resolve([user])]);status.textContent=rows.length?`${offset+1}〜${offset+rows.length}件`:'報告はありません。';
    const names=Object.fromEntries(users.map(u=>[u.id,u.display_name||u.name]));
-   for(const row of rows){const item=el('details');item.append(el('summary',labels[row.status]+'｜'+row.screen+'｜'+row.description.slice(0,70)));item.append(el('p',new Date(row.occurred_at).toLocaleString('ja-JP')+' ／ '+(names[row.reporter_id]||'利用者')));
+   for(const row of rows){const item=el('details');item.append(el('summary',labels[row.status]+'｜'+row.screen+'｜'+row.description.slice(0,70)));item.append(el('p',new Date(row.occurred_at).toLocaleString('ja-JP')+' ／ '+(row.reporter_name||names[row.reporter_id]||'利用者')));
     for(const[k,title]of [['description','内容'],['expected','期待'],['actual','実際'],['steps','手順'],['device','端末']]){item.append(el('b',title),el('pre',row[k]));}
     const imageButton=button('添付画像を確認',async()=>{try{const r=await request('reports/'+row.id+'/image');if(!r.ok)throw Error('添付画像がないか、閲覧できません。');const url=URL.createObjectURL(await r.blob()),img=el('img',null,{src:url,alt:'確認済みの架空データの添付画像'});item.append(img);imageButton.disabled=true;d.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});}catch(e){toast(e.message);}});item.append(imageButton);
     if(manager){const select=el('select',null,{'aria-label':'対応状況'});for(const[k,v]of Object.entries(labels)){const o=el('option',v,{value:k});select.append(o);}select.value=row.status;const save=button('対応状況を保存',async()=>{save.disabled=true;try{await api('reports/'+row.id,'PATCH',{status:select.value});item.querySelector('summary').textContent=labels[select.value]+'｜'+row.screen+'｜'+row.description.slice(0,70);toast('対応状況を保存しました。');}catch(e){status.textContent=e.message;}finally{save.disabled=false;}});item.append(select,save);}
@@ -80,7 +80,7 @@
   for(const s of record.students)if(typeof s.id!=='string'||!/^[-\w]+$/.test(s.id)||!Array.isArray(s.subjects))throw Error('生徒データの形式が不正です。');
   return value.entries;
  }
- function backups(){const d=dialog('バックアップ・復元');d.append(el('p','この利用者・この端末の全保存領域が対象です。実在する生徒のデータは取り込まないでください。'));
+ function backups(){if(window.ManabiShared)return sharedBackups();const d=dialog('バックアップ・復元');d.append(el('p','この利用者・この端末の全保存領域が対象です。実在する生徒のデータは取り込まないでください。'));
   d.append(button('全体JSONを保存',()=>{download(snapshot(),'manabi_debug_backup_'+localDate()+'.json');toast('下書き・設定を含めて書き出しました。');}));
   const input=el('input',null,{type:'file',accept:'.json,application/json'}),label=el('label','全体JSONから復元（現在データを上書き）');label.append(input);d.append(label);
   input.onchange=async()=>{try{const f=input.files[0];if(!f)return;if(f.size>8*1024*1024)throw Error('8MB以内のJSONを選択してください。');const entries=validateBackup(JSON.parse(await f.text()));if(!confirm('架空データだけのJSONであることを確認しましたか？ 現在データをバックアップしてから上書き復元します。'))return;
@@ -90,11 +90,27 @@
   }catch(e){toast('復元できません：'+e.message);}};
   d.append(button('架空データの初期状態に戻す',()=>{if(!confirm('現在データをJSON保存してから、この利用者・端末の架空データと下書き・設定を初期化しますか？'))return;download(snapshot(),'manabi_before_reset_'+Date.now()+'.json');for(const key of keys)DebugStorage.removeItem(key);DebugContext.locked=true;location.reload();}));
  }
+
+ function sharedBackups(){const d=dialog('共有データのバックアップ・復元');d.append(el('p','生徒・授業・成績などは全講師で共有しています。復元・初期化は全員に反映されます。'));
+  d.append(button('全体JSONを保存',()=>download(snapshot(),'manabi_shared_backup_'+localDate()+'.json')));
+  const legacy=localStorage.getItem(ManabiShared.legacyPrefix+keys[0]);if(legacy)d.append(button('以前の端末データをJSON保存',()=>{const entries={};for(const k of keys){const v=localStorage.getItem(ManabiShared.legacyPrefix+k);if(v)entries[k]=JSON.parse(v);}download({format:'manabi-debug-backup',version:1,created_at:new Date().toISOString(),entries},'manabi_previous_local_'+localDate()+'.json');}));
+  if(!manager)return;
+  const input=el('input',null,{type:'file',accept:'.json,application/json'}),label=el('label','全体JSONで共有DBを上書き復元');label.append(input);d.append(label);
+  const replace=async(kind,data)=>{await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error('未送信の入力があります。');const latest=await ManabiAuth.api('shared');const before=ManabiSharedModules.unpack(latest.records,{});download({format:'manabi-debug-backup',version:1,created_at:new Date().toISOString(),entries:{[keys[0]]:before}},'manabi_before_'+kind+'_'+Date.now()+'.json');await ManabiAuth.api('shared/'+kind,'POST',{expected_revision:latest.revision,data});location.reload();};
+  input.onchange=async()=>{try{const f=input.files[0];if(!f)return;if(f.size>8*1024*1024)throw Error('8MB以内のJSONを選択してください。');const entries=validateBackup(JSON.parse(await f.text()));if(!confirm('架空データだけのJSONで、全講師の共有データを上書きします。変更前の共有データはJSONとDBに保存します。よろしいですか？'))return;await replace('restore',entries[keys[0]]);}catch(e){toast('復元できません：'+e.message);}};
+  d.append(button('共有データを初期状態に戻す',async()=>{if(!confirm('全講師の共有データを最初の架空データへ戻します。変更前の共有データはJSONとDBに保存します。よろしいですか？'))return;try{await replace('reset');}catch(e){toast(e.message);}}));
+ }
+ if(window.ManabiShared){
+  const syncStatus=el('span',ManabiShared.status.message,{role:'status',class:'shared-sync-status'});bar.append(syncStatus);
+  const recover=button('未送信の入力を確認',()=>{const d=dialog('共有DBに送れていない入力');d.append(el('p',ManabiShared.status.message));d.append(button('未送信の入力をJSON保存',()=>download(ManabiShared.sync.exportPending(),'manabi_unsent_'+Date.now()+'.json')));d.append(button('入力を保存して最新データを開く',()=>{if(!confirm('未送信の入力をJSONに保存し、この画面は共有DBの最新内容へ戻します。必要な内容はJSONを見ながら再入力してください。'))return;download(snapshot(),'manabi_before_reload_'+Date.now()+'.json');download(ManabiShared.sync.exportPending(),'manabi_unsent_'+Date.now()+'.json');localStorage.removeItem(ManabiShared.localPrefix+'outbox');ManabiShared.sync.pending.clear();ManabiShared.sync.inflight=null;location.reload();}));});recover.hidden=true;bar.append(recover);
+  window.addEventListener('manabi-sync',e=>{syncStatus.textContent=e.detail.message;recover.hidden=!e.detail.blocked;});
+  bar.append(button('共有データを更新',async()=>{try{captureVisibleEditors();persist();await ManabiShared.sync.refresh();toast('共有データを確認しました。');}catch(e){toast(e.message);}}));
+ }
  // The original reset button now resets all relevant storage, using the same safe workflow.
  resetDemo=()=>backups();
  async function check(){if(checking||halted)return;checking=true;try{const latest=await api('me');if(latest.role!==user.role)halt('利用権限が変更されました。再読み込みしてください。');}catch{if(!halted)halt('利用許可を確認できません。回線を確認して再読み込みしてください。');}finally{checking=false;}}
  setInterval(check,60000);window.addEventListener('focus',check);window.addEventListener('pageshow',e=>{if(e.persisted)check();});
- window.addEventListener('storage',e=>{if(e.key?.startsWith('manabi_debug:'+user.id+':'))halt('別の画面で保存内容が変更されました。再読み込みしてください。');});
+ window.addEventListener('storage',e=>{if(e.key?.startsWith(window.ManabiShared?ManabiShared.localPrefix:'manabi_debug:'+user.id+':'))halt('別の画面で保存内容が変更されました。再読み込みしてください。');});
  // Exposed only for local DOM tests; no server secrets or privileges.
  window.ManabiDebug={validateBackup,snapshot};
 })();

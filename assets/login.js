@@ -1,11 +1,14 @@
 (()=>{
- const auth=window.ManabiAuth,form=document.getElementById('login-form'),status=document.getElementById('login-status');
+ const auth=window.ManabiAuth,form=document.getElementById('login-form'),status=document.getElementById('login-status'),staffForm=document.getElementById('staff-form');
  const say=message=>{status.textContent=message;};
  async function proceed(){
-  await auth.api('me');
+  const me=await auth.api('me');
+  if(me.staff_required){auth.clearStaff();form.hidden=true;document.getElementById('staff-panel').hidden=false;document.getElementById('forgot').hidden=true;staffForm.elements.barcode.focus();return;}
   location.replace('./app.html');
  }
  form.addEventListener('submit',async event=>{event.preventDefault();const send=form.querySelector('button');send.disabled=true;say('ログインしています…');try{const data=new FormData(form),result=await auth.client.auth.signInWithPassword({email:String(data.get('email')).trim(),password:String(data.get('password'))});form.elements.password.value='';if(result.error)throw Error('メールアドレスまたはパスワードを確認してください。');say('');await proceed();}catch(error){say(error.message);}finally{send.disabled=false;}});
+ staffForm.onsubmit=async event=>{event.preventDefault();const send=staffForm.querySelector('button');send.disabled=true;try{const result=await auth.api('staff/login','POST',{barcode:staffForm.elements.barcode.value});staffForm.elements.barcode.value='';auth.setStaffToken(result.token);await proceed();}catch(error){staffForm.elements.barcode.value='';say(error.message);}finally{send.disabled=false;}};
+ document.getElementById('change-account').onclick=async()=>{await auth.signOut();location.reload();};
  document.getElementById('forgot').onclick=()=>say('パスワードの再設定は代表へ依頼してください。');
  auth.session().then(proceed).catch(error=>{if(error.status!==401)say(error.message);});
 })();

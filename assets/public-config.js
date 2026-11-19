@@ -1,1 +1,1 @@
-window.ManabiPublicConfig={"url":"https://vlkzogdpfmnyderdnslc.supabase.co","key":"sb_publishable_NGbcPKqoryndsdnqKG-2GA_joigdT4D","api":"https://vlkzogdpfmnyderdnslc.supabase.co/functions/v1/manabi-debug-api"};
+window.ManabiPublicConfig={"url":"https://vlkzogdpfmnyderdnslc.supabase.co","key":"sb_publishable_NGbcPKqoryndsdnqKG-2GA_joigdT4D","api":"https://vlkzogdpfmnyderdnslc.supabase.co/functions/v1/manabi-debug-api-shared"};
