@@ -2,7 +2,7 @@
  const auth=window.ManabiAuth;
  const stop=message=>{document.body.replaceChildren();const box=document.createElement('main');box.className='debug-block';const h=document.createElement('h1');h.textContent='学びのスキルカルテ';const p=document.createElement('p');p.textContent=message;const a=document.createElement('a');a.href='./';a.textContent='ログイン画面へ';box.append(h,p,a);document.body.append(box);};
  try{
-  const user=await auth.api('me');if(user.mfa_required){location.replace('./');return;}
+  const user=await auth.api('me');
   window.DebugContext={user,locked:false,loginURL:'./',request:auth.request,signOut:auth.signOut};
   const prefix='manabi_debug:'+user.id+':';
   window.DebugStorage={getItem:key=>localStorage.getItem(prefix+key),setItem:(key,value)=>{if(DebugContext.locked)throw Error('locked');localStorage.setItem(prefix+key,value);},removeItem:key=>{if(DebugContext.locked)throw Error('locked');localStorage.removeItem(prefix+key);},keys:()=>Object.keys(localStorage).filter(k=>k.startsWith(prefix)).map(k=>k.slice(prefix.length))};
