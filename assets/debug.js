@@ -22,7 +22,7 @@
  async function logout(){try{if(window.ManabiShared){await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error();}await api('logout','POST',{});if(DebugContext.signOut)await DebugContext.signOut();halt('ログアウトしました。');location.assign(DebugContext.loginURL||'./');}catch(e){toast('ログアウトを完了できません。回線を確認して再試行してください。');}}
  v13Logout=logout;
  const bar=el('section',null,{class:'debug-bar','aria-label':'非公開デバッグ'});
- bar.append(el('span',window.ManabiShared?'共同デバッグ｜架空データを講師間で共有しています。':'非公開テスト｜架空データのみ。端末ごとに独立・自動共有なし。ブラウザデータ削除で消えます。'));
+ bar.append(el('span',window.ManabiShared?'教室共有｜現在は架空データです。':'非公開テスト｜架空データのみ。端末ごとに独立・自動共有なし。ブラウザデータ削除で消えます。'));
  function button(text,fn){const b=el('button',text,{type:'button',class:'btn small'});b.onclick=fn;return b;}
  bar.append(button('不具合を報告',report),button(manager?'報告を管理':'自分の報告',()=>listReports(0)),button('バックアップ・復元',backups),button(window.ManabiShared?'講師を切り替える':'操作役を試す',async()=>{if(window.ManabiShared){try{await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error('未送信の入力を先に確認してください。');await api('logout','POST',{});ManabiAuth.clearStaff();location.assign('./');}catch(e){toast(e.message);}return;}originalLogout();document.getElementById('v13-login-title').textContent='架空データの操作役を選択';}),button('ログアウト',logout));
  const main=document.getElementById('content');main.parentNode.insertBefore(bar,main);
@@ -95,9 +95,15 @@
   d.append(button('全体JSONを保存',()=>download(snapshot(),'manabi_shared_backup_'+localDate()+'.json')));
   const legacy=localStorage.getItem(ManabiShared.legacyPrefix+keys[0]);if(legacy)d.append(button('以前の端末データをJSON保存',()=>{const entries={};for(const k of keys){const v=localStorage.getItem(ManabiShared.legacyPrefix+k);if(v)entries[k]=JSON.parse(v);}download({format:'manabi-debug-backup',version:1,created_at:new Date().toISOString(),entries},'manabi_previous_local_'+localDate()+'.json');}));
   if(!manager)return;
+  const history=el('section'),backupStatus=el('p','DBのバックアップを確認中…',{role:'status'});history.append(backupStatus);d.append(history);
+  const backupKinds={initial:'初期データ',scheduled:'日次保存',manual:'手動保存',restore:'復元前',reset:'初期化前'};
+  const loadBackups=async()=>{try{const rows=await ManabiAuth.api('shared/backups');history.replaceChildren(backupStatus);const latest=rows.find(b=>b.kind==='scheduled');backupStatus.textContent='毎日03:00（日本時間）に自動保存・直近7回を保持。'+(latest?' 最終保存：'+new Date(latest.created_at).toLocaleString('ja-JP'):' まだ日次保存がありません。');if(!latest||Date.now()-Date.parse(latest.created_at)>36*3600000)backupStatus.textContent+=' 自動保存の稼働状況を管理者へ確認してください。';for(const b of rows){const row=el('div',null,{class:'row mt'});row.append(el('span',new Date(b.created_at).toLocaleString('ja-JP')+'｜'+(backupKinds[b.kind]||b.kind)+'｜'+b.record_count+'件'));row.append(button('JSON保存',async()=>{try{const v=await ManabiAuth.api('shared/backups/'+b.id);download({format:'manabi-debug-backup',version:1,created_at:v.created_at,entries:{[keys[0]]:ManabiSharedModules.unpack(v.records,{})}},'manabi_db_backup_'+b.id+'.json');}catch(e){toast(e.message);}}));row.append(button('この時点に戻す',async()=>{if(!confirm('全講師の共有データを、この時点に戻します。現在の内容は復元前のバックアップへ保存します。よろしいですか？'))return;try{const v=await ManabiAuth.api('shared/backups/'+b.id);await replace('restore',ManabiSharedModules.unpack(v.records,{}));}catch(e){toast(e.message);}}));history.append(row);}}catch(e){backupStatus.textContent=e.message;}};
+  d.append(button('今の共有DBをバックアップ',async()=>{try{await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error('未送信の入力があります。');await ManabiAuth.api('shared/backups','POST',{});await loadBackups();toast('共有DBをバックアップしました。');}catch(e){toast(e.message);}}));
+  d.append(el('p','DB内の控えです。サーバー全体の障害に備えて、JSONも別の場所へ保存してください。'));
   const input=el('input',null,{type:'file',accept:'.json,application/json'}),label=el('label','全体JSONで共有DBを上書き復元');label.append(input);d.append(label);
   const replace=async(kind,data)=>{await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error('未送信の入力があります。');const latest=await ManabiAuth.api('shared');const before=ManabiSharedModules.unpack(latest.records,{});download({format:'manabi-debug-backup',version:1,created_at:new Date().toISOString(),entries:{[keys[0]]:before}},'manabi_before_'+kind+'_'+Date.now()+'.json');await ManabiAuth.api('shared/'+kind,'POST',{expected_revision:latest.revision,data});location.reload();};
   input.onchange=async()=>{try{const f=input.files[0];if(!f)return;if(f.size>8*1024*1024)throw Error('8MB以内のJSONを選択してください。');const entries=validateBackup(JSON.parse(await f.text()));if(!confirm('架空データだけのJSONで、全講師の共有データを上書きします。変更前の共有データはJSONとDBに保存します。よろしいですか？'))return;await replace('restore',entries[keys[0]]);}catch(e){toast('復元できません：'+e.message);}};
+  loadBackups();
   d.append(button('共有データを初期状態に戻す',async()=>{if(!confirm('全講師の共有データを最初の架空データへ戻します。変更前の共有データはJSONとDBに保存します。よろしいですか？'))return;try{await replace('reset');}catch(e){toast(e.message);}}));
  }
  if(window.ManabiShared){
@@ -108,7 +114,7 @@
  }
  // The original reset button now resets all relevant storage, using the same safe workflow.
  resetDemo=()=>backups();
- async function check(){if(checking||halted)return;checking=true;try{const latest=await api('me');if(latest.role!==user.role)halt('利用権限が変更されました。再読み込みしてください。');}catch{if(!halted)halt('利用許可を確認できません。回線を確認して再読み込みしてください。');}finally{checking=false;}}
+ async function check(){if(checking||halted)return;checking=true;try{const latest=await api('me');if(latest.role!==user.role)halt('利用権限が変更されました。再読み込みしてください。');}catch(error){if(!halted&&[401,403].includes(error.status))halt('認証が切れました。ログインし直してください。未送信の入力は端末に残っています。');else if(!halted&&window.ManabiShared)ManabiShared.sync.status('回線を確認しています。未送信の入力は端末に保持します。');}finally{checking=false;}}
  setInterval(check,60000);window.addEventListener('focus',check);window.addEventListener('pageshow',e=>{if(e.persisted)check();});
  window.addEventListener('storage',e=>{if(e.key?.startsWith(window.ManabiShared?ManabiShared.localPrefix:'manabi_debug:'+user.id+':'))halt('別の画面で保存内容が変更されました。再読み込みしてください。');});
  // Exposed only for local DOM tests; no server secrets or privileges.
