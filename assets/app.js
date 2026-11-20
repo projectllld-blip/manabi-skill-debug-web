@@ -99,7 +99,7 @@ function openSkills(){let a=getAssess(state.student,state.subject);let proposals
 function useProposal(i){let p=window.currentProposals[i];window.skillReferenceIds.add(p.lesson);document.getElementById('value-'+i).value=p.value;document.getElementById('evidence-'+i).value=fmt(p.date)+'の授業：'+p.reason;toast('入力欄に反映しました。内容を確認して保存してください。')}
 function saveSkills(e){e.preventDefault();let values=AXES.map((_,i)=>{let v=document.getElementById('value-'+i).value;return v===''?null:Number(v)});let evidence=AXES.map((_,i)=>document.getElementById('evidence-'+i).value.trim());if(values.some((v,i)=>v!==null&&!evidence[i])){toast('評価した項目には根拠となる行動を記入してください。');return}let old=getAssess(state.student,state.subject);let data={id:uid('sk'),student:state.student,subject:state.subject,date:document.getElementById('skill-date').value,values,evidence,lessonIds:[...(window.skillReferenceIds||new Set())],author:state.actor,createdAt:now()};db.assessments.push(data);audit('スキル評価',state.student,state.subject,'6つの力を手動設定',old?skillText(old):'評価なし',skillText(data));persist();closeModal();render();toast('評価と根拠を保存しました。過去の評価は残ります。')}
 function skillText(a){return AXES.map((x,i)=>x+'：'+(a.values[i]??'未評価')+'\n根拠：'+(a.evidence[i]||'未確認')).join('\n\n')}
-function openLesson(id=''){let l=id?db.lessons.find(x=>x.id===id):null;let s=student(l?.student||state.student);let teacher=l?.teacher||(state.actor.includes('講師')?state.actor:'講師 A（デモ）');modal(id?'授業記録の詳細・編集':'授業を記録',`<form id="lesson-form" onsubmit="saveLesson(event,'${id}')"><div class="form-grid three mb"><label class="field">生徒<select name="student" id="entry-student" onchange="updateEntrySubjects(this.value)">${studentOptions(s.id)}</select></label><label class="field">教科<select name="subject" id="entry-subject">${subjOptions(l?.subject||state.subject,false,s.subjects)}</select></label><label class="field">授業日<input type="date" name="date" value="${l?.date||TODAY}" required></label><label class="field">担当講師<select name="teacher">${teacherOptions(teacher,false)}</select></label><label class="field">コマ<select name="slot">${['A','B','C','D'].map(x=>`<option ${x===(l?.slot||'B')?'selected':''}>${x}</option>`).join('')}</select></label><label class="field">授業進度<select name="mode">${['復習','同範囲','予習'].map(x=>`<option ${x===(l?.mode||'同範囲')?'selected':''}>${x}</option>`).join('')}</select></label><label class="field full">学習した単元・範囲 <span class="tiny">必須</span><input name="unit" required value="${esc(l?.unit||'')}" placeholder="例：一次関数・変化の割合"></label><label class="field">教材<input name="material" value="${esc(l?.material||'')}" placeholder="教材名"></label><label class="field">ページ・問題番号<input name="pages" value="${esc(l?.pages||'')}" placeholder="例：p.42〜43"></label></div><div class="fieldgroup"><div class="fieldtitle">今回の到達度 <span class="small muted">単元の評価</span></div><div class="radio-list">${['4','3','2','1',''].map(v=>`<label class="radioitem"><input type="radio" name="level" value="${v}" ${String(l?.level??'')===v?'checked':''}>${v?v+'：':'未評価：'}${LEVELS[v]}</label>`).join('')}</div></div><div class="fieldgroup"><div class="fieldtitle">つまずきの原因 <span class="small muted">複数選択・任意</span></div><div class="tagrow">${STUMBLES.map(x=>`<label class="chipcheck"><input type="checkbox" name="stumbles" value="${x}" ${l?.stumbles.includes(x)?'checked':''}>${x}</label>`).join('')}</div></div><label class="field">できたこと・支援の効果・気づき <span class="tiny">必須／短い所見でOK</span><textarea name="obs" required placeholder="例：xとyの増加量を混同。表で確認すると理解が進んだ。">${esc(l?.obs||'')}</textarea></label><div class="fieldgroup mt"><div class="fieldtitle">見つけた良さ <span class="small muted">確認できたものだけ・任意</span></div><div class="tagrow">${TAGS.map(x=>`<label class="chipcheck"><input type="checkbox" name="tags" value="${x}" ${l?.tags.includes(x)?'checked':''}>${x}</label>`).join('')}</div></div><label class="field">次回の取り組み <span class="tiny">必須</span><textarea name="next" required rows="2" placeholder="例：表から変化の割合を求める練習">${esc(l?.next||'')}</textarea></label><div class="form-grid mt"><label class="field">前回の宿題<select name="homeworkDone">${['実施','一部実施','未実施','確認できていない'].map(x=>`<option ${x===(l?.homeworkDone||'確認できていない')?'selected':''}>${x}</option>`).join('')}</select><label class="field">今回の宿題 <span class="tiny">必須／出さない場合は「なし」</span><input name="homework" required value="${esc(l?.homework||'')}" placeholder="範囲・量・取り組み方"></label></div><details class="mt"><summary class="small">確認テストの結果・内部メモ（任意）</summary><div class="form-grid mt"><label class="field">正答数<input name="correct" type="number" min="0" value="${l?.correct??''}"></label><label class="field">出題数<input name="total" type="number" min="1" value="${l?.total??''}"></label><label class="field full">講師・教室長向けの内部メモ<textarea name="internal" placeholder="保護者用報告書には掲載しません。">${esc(l?.internal||'')}</textarea></label></div></details><div class="draft-note mt">下書きは未報告です。「教室長に報告」後、日別報告の確認対象になります。終業時の口頭報告は継続してください。${l?.status==='確認済み'?'<br><b>確認済みの記録を修正すると、再確認のため「報告済み」に戻ります。</b>':''}</div><div class="formfooter"><button type="button" class="btn" onclick="closeModal()">キャンセル</button><button name="intent" value="draft" class="btn">下書き保存</button><button name="intent" value="report" class="btn primary">${icon('check')}保存して教室長に報告</button></div></form>`)}
+function openLesson(id=''){let l=id?db.lessons.find(x=>x.id===id):null;let s=student(l?.student||state.student);let teacher=l?.teacher||manabiEntryTeacher();modal(id?'授業記録の詳細・編集':'授業を記録',`<form id="lesson-form" onsubmit="saveLesson(event,'${id}')"><div class="form-grid three mb"><label class="field">生徒<select name="student" id="entry-student" onchange="updateEntrySubjects(this.value)">${studentOptions(s.id)}</select></label><label class="field">教科<select name="subject" id="entry-subject">${subjOptions(l?.subject||state.subject,false,s.subjects)}</select></label><label class="field">授業日<input type="date" name="date" value="${l?.date||TODAY}" required></label><label class="field">担当講師<select name="teacher">${teacherOptions(teacher,false)}</select></label><label class="field">コマ<select name="slot">${['A','B','C','D'].map(x=>`<option ${x===(l?.slot||'B')?'selected':''}>${x}</option>`).join('')}</select></label><label class="field">授業進度<select name="mode">${['復習','同範囲','予習'].map(x=>`<option ${x===(l?.mode||'同範囲')?'selected':''}>${x}</option>`).join('')}</select></label><label class="field full">学習した単元・範囲 <span class="tiny">必須</span><input name="unit" required value="${esc(l?.unit||'')}" placeholder="例：一次関数・変化の割合"></label><label class="field">教材<input name="material" value="${esc(l?.material||'')}" placeholder="教材名"></label><label class="field">ページ・問題番号<input name="pages" value="${esc(l?.pages||'')}" placeholder="例：p.42〜43"></label></div><div class="fieldgroup"><div class="fieldtitle">今回の到達度 <span class="small muted">単元の評価</span></div><div class="radio-list">${['4','3','2','1',''].map(v=>`<label class="radioitem"><input type="radio" name="level" value="${v}" ${String(l?.level??'')===v?'checked':''}>${v?v+'：':'未評価：'}${LEVELS[v]}</label>`).join('')}</div></div><div class="fieldgroup"><div class="fieldtitle">つまずきの原因 <span class="small muted">複数選択・任意</span></div><div class="tagrow">${STUMBLES.map(x=>`<label class="chipcheck"><input type="checkbox" name="stumbles" value="${x}" ${l?.stumbles.includes(x)?'checked':''}>${x}</label>`).join('')}</div></div><label class="field">できたこと・支援の効果・気づき <span class="tiny">必須／短い所見でOK</span><textarea name="obs" required placeholder="例：xとyの増加量を混同。表で確認すると理解が進んだ。">${esc(l?.obs||'')}</textarea></label><div class="fieldgroup mt"><div class="fieldtitle">見つけた良さ <span class="small muted">確認できたものだけ・任意</span></div><div class="tagrow">${TAGS.map(x=>`<label class="chipcheck"><input type="checkbox" name="tags" value="${x}" ${l?.tags.includes(x)?'checked':''}>${x}</label>`).join('')}</div></div><label class="field">次回の取り組み <span class="tiny">必須</span><textarea name="next" required rows="2" placeholder="例：表から変化の割合を求める練習">${esc(l?.next||'')}</textarea></label><div class="form-grid mt"><label class="field">前回の宿題<select name="homeworkDone">${['実施','一部実施','未実施','確認できていない'].map(x=>`<option ${x===(l?.homeworkDone||'確認できていない')?'selected':''}>${x}</option>`).join('')}</select><label class="field">今回の宿題 <span class="tiny">必須／出さない場合は「なし」</span><input name="homework" required value="${esc(l?.homework||'')}" placeholder="範囲・量・取り組み方"></label></div><details class="mt"><summary class="small">確認テストの結果・内部メモ（任意）</summary><div class="form-grid mt"><label class="field">正答数<input name="correct" type="number" min="0" value="${l?.correct??''}"></label><label class="field">出題数<input name="total" type="number" min="1" value="${l?.total??''}"></label><label class="field full">講師・教室長向けの内部メモ<textarea name="internal" placeholder="保護者用報告書には掲載しません。">${esc(l?.internal||'')}</textarea></label></div></details><div class="draft-note mt">下書きは未報告です。「教室長に報告」後、日別報告の確認対象になります。終業時の口頭報告は継続してください。${l?.status==='確認済み'?'<br><b>確認済みの記録を修正すると、再確認のため「報告済み」に戻ります。</b>':''}</div><div class="formfooter"><button type="button" class="btn" onclick="closeModal()">キャンセル</button><button name="intent" value="draft" class="btn">下書き保存</button><button name="intent" value="report" class="btn primary">${icon('check')}保存して教室長に報告</button></div></form>`)}
 function updateEntrySubjects(id){document.getElementById('entry-subject').innerHTML=subjOptions('',false,student(id).subjects)}
 function saveLesson(e,id){e.preventDefault();let f=new FormData(e.target),intent=e.submitter?.value||'draft';let c=f.get('correct'),t=f.get('total');if((c&&!t)||(!c&&c!=='0'&&t)||(c!==''&&t!==''&&Number(c)>Number(t))){toast('正答数・出題数は両方入力し、正答数を出題数以下にしてください。');return}let old=id?db.lessons.find(x=>x.id===id):null;let item={id:old?.id||uid('lesson'),student:f.get('student'),subject:f.get('subject'),date:f.get('date'),teacher:f.get('teacher'),slot:f.get('slot'),unit:f.get('unit').trim(),material:f.get('material').trim(),pages:f.get('pages').trim(),mode:f.get('mode'),level:f.get('level')===''?null:Number(f.get('level')),stumbles:f.getAll('stumbles'),obs:f.get('obs').trim(),next:f.get('next').trim(),homework:f.get('homework').trim(),homeworkDone:f.get('homeworkDone'),tags:f.getAll('tags'),correct:c===''?null:Number(c),total:t===''?null:Number(t),internal:f.get('internal').trim(),status:intent==='report'?'報告済み':'下書き',createdAt:old?.createdAt||now(),updatedAt:now()};if(!item.unit||!item.obs||!item.next||!item.homework){toast('必須項目に空白以外の内容を入力してください。');return}audit('授業記録',item.student,item.subject,old?'授業記録を更新':'授業記録を作成',old?lessonText(old):'新規',lessonText(item));if(old)db.lessons[db.lessons.indexOf(old)]=item;else db.lessons.push(item);persist();closeModal();render();toast(intent==='report'?'保存し、教室長の確認待ちにしました。':'下書きを保存しました。')}
 function lessonText(l){return ['記録ID：'+l.id,'生徒：'+student(l.student).name,'授業日：'+l.date+' '+l.slot+'コマ','担当：'+l.teacher,'教科：'+l.subject,'単元：'+l.unit,'教材：'+l.material+' '+l.pages,'授業進度：'+l.mode,'到達度：'+(l.level??'未評価'),'つまずき：'+l.stumbles.join('、'),'所見：'+l.obs,'良さのタグ：'+l.tags.join('、'),'次回：'+l.next,'宿題：'+l.homework,'前回宿題の実施：'+l.homeworkDone,'確認問題：'+(l.correct??'未記録')+' / '+(l.total??'未記録'),'内部メモ：'+l.internal,'状態：'+l.status].join('\n')}
@@ -397,7 +397,7 @@ function submitEntry(token,intent){let d=captureEntry(token);if(!d)return;let ro
  // Preserve editor-specific material homework separately from the combined report string.
  const fresh=draftFrom(item);fresh.homework=item.homeworkNote;let key=draftKey(d.student,d.subject,d.date,d.slot,d.teacher);db.deskDrafts[key]=fresh;
  if(token==='modal'){extra.modalDraft=fresh;closeModal();}persist();refreshPreservingDesk();toast(intent==='report'?'保存して教室長の確認待ちにしました。':'下書きを保存しました。申し送りも内部欄へ反映しています。');}
-openLesson=function(id=''){let l=id?db.lessons.find(x=>x.id===id):null;if(id&&!l){toast('授業記録が見つかりません。');return;}let sid=l?.student||state.student,sub=l?.subject||state.subject,teacher=l?.teacher||(state.actor.includes('講師')?state.actor:'講師 A（デモ）'),date=l?.date||TODAY,slot=l?.slot||'B';let key=draftKey(sid,sub,date,slot,teacher);extra.modalKey=key;extra.modalDraft=db.deskDrafts[key]||(l?draftFrom(l):blankDraft(sid,sub,date,slot,teacher));if(l&&!extra.modalDraft._dirty)extra.modalDraft=draftFrom(l);if(extra.modalDraft.homeworkNote!==undefined)extra.modalDraft.homework=extra.modalDraft.homeworkNote;db.deskDrafts[key]=extra.modalDraft;let d=extra.modalDraft,s=student(sid);modal((id?'授業記録の詳細・編集':'授業を記録')+'｜'+s.name+'・'+sub,`<div class="notice info mb">${esc(s.name)} ／ ${esc(sub)} ／ ${fmt(date)} ${slot}コマ ／ ${esc(teacher)}<br>学習記録は生徒・教科ごとに保存します。教材は複数入力できます。</div>${handoverStrip(sid,sub)}${renderPrevious(d,prevLesson(d),'modal')}<div id="modal-entry-host">${renderEntry(d,'modal')}</div>`);};
+openLesson=function(id=''){let l=id?db.lessons.find(x=>x.id===id):null;if(id&&!l){toast('授業記録が見つかりません。');return;}let sid=l?.student||state.student,sub=l?.subject||state.subject,teacher=l?.teacher||manabiEntryTeacher(),date=l?.date||TODAY,slot=l?.slot||'B';let key=draftKey(sid,sub,date,slot,teacher);extra.modalKey=key;extra.modalDraft=db.deskDrafts[key]||(l?draftFrom(l):blankDraft(sid,sub,date,slot,teacher));if(l&&!extra.modalDraft._dirty)extra.modalDraft=draftFrom(l);if(extra.modalDraft.homeworkNote!==undefined)extra.modalDraft.homework=extra.modalDraft.homeworkNote;db.deskDrafts[key]=extra.modalDraft;let d=extra.modalDraft,s=student(sid);modal((id?'授業記録の詳細・編集':'授業を記録')+'｜'+s.name+'・'+sub,`<div class="notice info mb">${esc(s.name)} ／ ${esc(sub)} ／ ${fmt(date)} ${slot}コマ ／ ${esc(teacher)}<br>学習記録は生徒・教科ごとに保存します。教材は複数入力できます。</div>${handoverStrip(sid,sub)}${renderPrevious(d,prevLesson(d),'modal')}<div id="modal-entry-host">${renderEntry(d,'modal')}</div>`);};
 // Capture each editor independently, so input is not lost on navigation or student changes.
 document.addEventListener('input',e=>{let root=e.target.closest('form[data-editor]');if(root)captureEntry(root.dataset.editor);});
 document.addEventListener('change',e=>{let root=e.target.closest('form[data-editor]');if(root)captureEntry(root.dataset.editor);});
@@ -3183,7 +3183,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   }
   return null;
  };
- const baseline=new WeakMap(),resolved=new WeakSet(),manualPrefix=new WeakMap();let inputTimer;
+ const baseline=new WeakMap(),resolved=new WeakSet(),manualPrefix=new WeakMap(),composing=new WeakSet();let inputTimer;
  const remember=input=>{const place=locate(input),row=place&&getEditor(place.token)?.[place.key]?.[place.index];if(row)baseline.set(input,{name:row.name||'',catalogId:row.catalogId||'',sourcePages:row.sourcePages});};
  // The legacy app saves after each keystroke. A partially read code must not
  // replace the previously selected Japanese name or leak into a lesson report.
@@ -3192,9 +3192,15 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   const root=editorRoot(token),draft=getEditor(token),held=[];
   for(const input of root?.querySelectorAll(selector)||[]){
    const place=locate(input);if(!place||!(barcodeLike(input.value)||prefixOnly(input.value)&&manualPrefix.get(input)!==input.value))continue;
-   held.push([input,input.value]);input.value=baseline.get(input)?.name??draft?.[place.key]?.[place.index]?.name??'';
+   const previous=baseline.get(input)||draft?.[place.key]?.[place.index]||{};
+   held.push({place,name:previous.name||'',catalogId:previous.catalogId||'',sourcePages:previous.sourcePages});
   }
-  try{return priorCapture(token);}finally{for(const [input,value] of held)input.value=value;}
+  // Never assign input.value while someone is typing: even restoring the same
+  // text can end a Japanese IME composition (d + o becoming dお).
+  // lesson-input.js batches the legacy saves until these draft fields are restored.
+  const result=priorCapture(token);
+  for(const {place,name,catalogId,sourcePages} of held){const row=result?.[place.key]?.[place.index];if(!row)continue;row.name=name;row.catalogId=catalogId;if(sourcePages===undefined)delete row.sourcePages;else row.sourcePages=sourcePages;}
+  return result;
  };
  function focusNext(place){
   const field=place.container.querySelector('[data-'+place.prefix+'-field="'+(place.prefix==='mat'?'content':'unit')+'"]')||place.container.querySelector('[data-'+place.prefix+'-field="pages"]');
@@ -3202,7 +3208,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   field?.focus({preventScroll:true});
  }
  function apply(input,moveFocus=false){
-  const place=locate(input);if(!place||!ready()||!barcodeLike(input.value))return false;
+  const place=locate(input);if(!place||composing.has(input)||!ready()||!barcodeLike(input.value))return false;
   clearTimeout(inputTimer);
   const resolution=resolve(input.value),code=resolution.code,draft=getEditor(place.token),previous=draft?.[place.key]?.[place.index];
   if(!previous)return false;
@@ -3223,7 +3229,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   toast('教材名を反映しました。単元名・ページを続けて入力できます。');return true;
  }
  document.addEventListener('keydown',event=>{
-  if(event.isComposing||event.keyCode===229||event.ctrlKey||event.metaKey||event.altKey||!['Enter','Tab'].includes(event.key))return;
+  if(event.isComposing||composing.has(event.target)||event.keyCode===229||event.ctrlKey||event.metaKey||event.altKey||!['Enter','Tab'].includes(event.key))return;
   const input=event.target,place=locate(input);if(!place)return;
   if(!barcodeLike(input.value)){
    if(prefixOnly(input.value)){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}
@@ -3233,17 +3239,66 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   }
   event.preventDefault();event.stopImmediatePropagation();apply(input,true);
  },true);
- const schedule=input=>{clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(!input.isConnected)return;if(materialCode(input.value)||otherCode(input.value))apply(input);else if(!barcodeLike(input.value)&&prefixOnly(input.value)){const place=locate(input);if(place&&ready()){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}}},220);};
- document.addEventListener('input',event=>{if(!locate(event.target))return;if(!baseline.has(event.target))remember(event.target);resolved.delete(event.target);manualPrefix.delete(event.target);clearTimeout(inputTimer);if(!event.isComposing){const input=event.target,value=input.value;if(!barcodeLike(value)&&!prefixOnly(value))queueMicrotask(()=>{if(input.isConnected&&input.value===value)remember(input);});schedule(input);}},true);
- document.addEventListener('change',event=>{const input=event.target,place=locate(input);if(!place)return;if(barcodeLike(input.value))apply(input);else if(prefixOnly(input.value)){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}},true);
- document.addEventListener('compositionend',event=>{if(locate(event.target))schedule(event.target);},true);
+ const schedule=input=>{clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(!input.isConnected||composing.has(input))return;if(materialCode(input.value)||otherCode(input.value))apply(input);else if(!barcodeLike(input.value)&&prefixOnly(input.value)){const place=locate(input);if(place&&ready()){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}}},220);};
+ document.addEventListener('input',event=>{if(!locate(event.target))return;if(!baseline.has(event.target))remember(event.target);resolved.delete(event.target);manualPrefix.delete(event.target);clearTimeout(inputTimer);if(!event.isComposing&&!composing.has(event.target)){const input=event.target,value=input.value;if(!barcodeLike(value)&&!prefixOnly(value))queueMicrotask(()=>{if(input.isConnected&&input.value===value)remember(input);});schedule(input);}},true);
+ document.addEventListener('change',event=>{const input=event.target,place=locate(input);if(!place||event.isComposing||composing.has(input))return;if(barcodeLike(input.value))apply(input);else if(prefixOnly(input.value)){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}},true);
+ document.addEventListener('compositionstart',event=>{composing.add(event.target);clearTimeout(inputTimer);clearTimeout(pickerTimer);},true);
+ document.addEventListener('compositionend',event=>{composing.delete(event.target);if(locate(event.target))schedule(event.target);else if(picker(event.target))schedulePicker(event.target);},true);
  document.addEventListener('focusout',event=>{if(locate(event.target))resolved.delete(event.target);});
  document.addEventListener('focusin',event=>{const input=event.target;if(!locate(input))return;remember(input);input.placeholder='選択・手入力・教材バーコード';input.autocomplete='off';input.select();});
  window.ManabiMaterialScan={apply,normalize};
  // The existing book picker uses the same master resolver and chooseBook path.
  const picker=input=>input?.matches?.('.book-filters input[type="search"]')&&extra.bookPicker;
  let pickerTimer;
- function chooseScannedBook(input){if(!picker(input)||!ready())return;const r=resolve(input.value);if(r.status==='found'&&r.matches[0].active!==false){chooseBook(r.matches[0].id);return;}toast(r.status==='ambiguous'?'同じ教材コードが複数あります。教材マスターを確認してください。':r.status==='wrong_kind'?'教材用のコードを読み取ってください。':'教材が見つかりません。教材マスターを確認してください。');input.focus();input.select();}
- document.addEventListener('input',event=>{const input=event.target;if(!picker(input)||event.isComposing)return;clearTimeout(pickerTimer);pickerTimer=setTimeout(()=>{if(input.isConnected&&resolve(input.value).matches.length)chooseScannedBook(input);},220);},true);
- document.addEventListener('keydown',event=>{const input=event.target;if(!picker(input)||!ManabiScan.isTerminator(event)||!barcodeLike(input.value))return;event.preventDefault();event.stopImmediatePropagation();clearTimeout(pickerTimer);chooseScannedBook(input);},true);
+ function chooseScannedBook(input){if(!picker(input)||composing.has(input)||!ready())return;const r=resolve(input.value);if(r.status==='found'&&r.matches[0].active!==false){chooseBook(r.matches[0].id);return;}toast(r.status==='ambiguous'?'同じ教材コードが複数あります。教材マスターを確認してください。':r.status==='wrong_kind'?'教材用のコードを読み取ってください。':'教材が見つかりません。教材マスターを確認してください。');input.focus();input.select();}
+ const schedulePicker=input=>{clearTimeout(pickerTimer);pickerTimer=setTimeout(()=>{if(input.isConnected&&!composing.has(input)&&resolve(input.value).matches.length)chooseScannedBook(input);},220);};
+ document.addEventListener('input',event=>{const input=event.target;if(!picker(input))return;clearTimeout(pickerTimer);if(!event.isComposing&&!composing.has(input))schedulePicker(input);},true);
+ document.addEventListener('keydown',event=>{const input=event.target;if(!picker(input)||composing.has(input)||!ManabiScan.isTerminator(event)||!barcodeLike(input.value))return;event.preventDefault();event.stopImmediatePropagation();clearTimeout(pickerTimer);chooseScannedBook(input);},true);
+})();
+
+/* Keep the existing form reader and record shapes. Its layered readers called
+   persist five times per keystroke; commit only their final combined draft. */
+(()=>{
+ const previousPersist=persist,previousCapture=captureEntry;
+ let depth=0,dirty=false;const tokens=new Set();
+ persist=function(){if(depth){dirty=true;return;}return previousPersist();};
+ captureEntry=function(token){
+  depth++;tokens.add(token);
+  try{return previousCapture(token);}
+  finally{
+   if(--depth===0){
+    const changed=dirty,editors=[...tokens];dirty=false;tokens.clear();
+    if(changed){
+     const drafts=editors.map(t=>{const data=getEditor(t),key=t==='modal'?extra.modalKey:data&&draftKey(data.student,data.subject,data.date,data.slot,data.teacher);return {key,data};});
+     if(window.ManabiShared?.persistDrafts&&drafts.every(({key,data})=>key&&data&&db.deskDrafts[key]===data)){
+      try{ManabiShared.persistDrafts(drafts);storageOK=true;}
+      catch{storageOK=false;toast('端末に入力を保存できません。画面を閉じず、未送信の入力をJSON保存してください。');}
+     }else previousPersist();
+     // The old reader updates this note before the single save has finished.
+     for(const t of editors){const note=editorRoot(t)?.querySelector('.draft-state');if(note&&!storageOK)note.textContent='入力を保存できません。画面を閉じず、未送信の入力をJSON保存してください。';}
+    }
+   }
+  }
+ };
+})();
+
+// Defaults are applied at login or a classroom change, never on every render.
+// In particular, historical records and manual teacher selections keep theirs.
+function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.includes('講師')?state.actor:'講師 A（デモ）');}
+(()=>{
+ const ordinary=t=>t&&t.active!==false&&(window.DebugContext?.user?DebugContext.user.teacher_id===t.id&&DebugContext.user.role==='teacher':t.role==='講師');
+ const previousLogin=v13LoginSuccess;
+ v13LoginSuccess=function(account,...args){
+  const t=db.teachers.find(t=>t.id===account.teacherId);
+  if(ordinary(t)){state.daily.teacher=t.name;v14Attendance.teacher=t.id;v14Attendance.result=null;v15TeacherHistory.teacher=t.name;v15TeacherHistory.defaultInitialized=true;}
+  return previousLogin(account,...args);
+ };
+ const previousFirst=roomTeacherFirst;
+ roomTeacherFirst=function(){const t=v13LoggedTeacher();return ordinary(t)&&roomTeachers().some(x=>x.id===t.id)?t.name:previousFirst();};
+ const previousSwitch=switchRoom;
+ switchRoom=function(room){
+  const before=currentRoom(),result=previousSwitch(room),t=v13LoggedTeacher();
+  if(before!==currentRoom()&&ordinary(t)&&roomTeachers().some(x=>x.id===t.id)){state.daily.teacher=t.name;if(state.page==='daily')render();}
+  return result;
+ };
 })();

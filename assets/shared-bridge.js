@@ -2,6 +2,7 @@
 (()=>{
  const shared=window.ManabiShared,auth=window.ManabiAuth;
  shared.readApp=()=>db;
+ shared.persistDrafts=drafts=>{if(DebugContext.locked)throw Error('locked');shared.sync.captureDrafts(drafts);};
  shared.applyApp=(value,redraw)=>{db=value;if(redraw)render();};
  shared.canRefresh=()=>!document.hidden&&!document.querySelector('dialog[open]')&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')&&Date.now()-shared.lastInput>1200;
  const oldToast=toast;toast=message=>oldToast(shared.sync.pending.size&&/保存|更新|反映|登録/.test(message)?message+'（共有DBへ送信中）':message);
