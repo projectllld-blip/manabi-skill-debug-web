@@ -5,7 +5,7 @@
  const roles={system_admin:'代表',classroom_manager:'教室長',assistant_manager:'講師',teacher:'講師'};
  const teacher=db.teachers.find(t=>t.id===user.teacher_id)||db.teachers.find(t=>t.role===roles[user.role])||db.teachers[0];
  const account=db.loginAccounts.find(a=>a.teacherId===teacher.id);
- if(account)v13LoginSuccess(account,window.ManabiShared?'バーコード':'Web認証済み・架空の操作役');
+ if(account)v13LoginSuccess(account,window.ManabiShared?(user.login_method==='password'?'ID・パスワード':'バーコード'):'Web認証済み・架空の操作役');
  v13CloseBoard();
  const originalLogout=v13Logout;
  const el=(tag,text,attrs={})=>{const n=document.createElement(tag);if(text)n.textContent=text;for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);return n;};
@@ -26,7 +26,7 @@
  function button(text,fn){const b=el('button',text,{type:'button',class:'btn small'});b.onclick=fn;return b;}
  bar.append(button('不具合を報告',report),button(manager?'報告を管理':'自分の報告',()=>listReports(0)),button('バックアップ・復元',backups),button(window.ManabiShared?'講師を切り替える':'操作役を試す',async()=>{if(window.ManabiShared){try{await ManabiShared.sync.flush();if(ManabiShared.sync.pending.size)throw Error('未送信の入力を先に確認してください。');await api('logout','POST',{});ManabiAuth.clearStaff();location.assign('./');}catch(e){toast(e.message);}return;}originalLogout();document.getElementById('v13-login-title').textContent='架空データの操作役を選択';}),button('ログアウト',logout));
  const main=document.getElementById('content');main.parentNode.insertBefore(bar,main);
- const identity=el('small','利用者：'+user.name+(window.ManabiShared?' ／ バーコードでログイン中':' ／ 画面内の講師切替・ログインIDは架空データの操作確認用です。'));bar.append(identity);
+ const identity=el('small','利用者：'+user.name+(window.ManabiShared?' ／ '+(user.login_method==='password'?'講師ID・パスワード':'バーコード')+'でログイン中':' ／ 画面内の講師切替・ログインIDは架空データの操作確認用です。'));bar.append(identity);
  function dialog(title){const d=el('dialog',null,{class:'debug-dialog'});d.append(el('h2',title));const close=button('閉じる',()=>d.close());d.append(close);d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal();return d;}
  function field(form,name,title,value='',type='textarea'){const label=el('label',title);const input=el(type==='textarea'?'textarea':'input',null,{name});if(type!=='textarea')input.type=type;input.required=true;input.value=value;input.maxLength=name==='screen'?160:4000;if(type==='textarea')input.rows=3;label.append(input);form.append(label);return input;}
  function report(){
