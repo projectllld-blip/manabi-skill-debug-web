@@ -2972,6 +2972,8 @@ ${x.text}`).join("\n\n"));
  scanStudent=function(value){
   clearTimeout(inputTimer);
   if(!ready())return false;
+  if(document.getElementById('v13-board-shade')?.hidden===false||document.querySelector('dialog[open]:not(#picker-dialog)'))return false;
+  if(window.ManabiLessonDay&&!ManabiLessonDay.canPrepare())return ManabiLessonDay.deny();
   const code=normalize(value),found=matches(value);
   if(wrongKind(code)){toast('生徒用のバーコードを読み取ってください。講師・教材のコードは使えません。');return false;}
   if(!code){toast('生徒番号をスキャン・入力してください。');return false;}
@@ -3520,41 +3522,109 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
  };
 })();
 
-/* A HID burst outside an editor follows the current page. Material input stays
-   explicitly attached to its pupil's material field; ordinary writing and IME
-   are never captured or delayed by this listener. */
+// The database repeats this rule with its own Japan date. Managers retain their
+// correction workflow; teachers can view every date and write only today's work.
+(()=>{
+ const manager=()=>window.DebugContext?.user?['system_admin','classroom_manager'].includes(DebugContext.user.role):v13Manager();
+ const today=()=>v16TodayJST();
+ const allowed=(date,old)=>manager()||date===today()&&(!old||old.date===today());
+ const message='講師が変更できるのは当日の授業準備・授業報告だけです。別の日付の訂正は教室長または代表へ依頼してください。';
+ v16CanWrite=allowed;v16CanEditLesson=l=>!!l&&allowed(l.date);
+ v16Deny=()=>{toast(message);return false;};
+ const readonlyOld=v16ReadOnly;
+ v16ReadOnly=function(l){const result=readonlyOld(l),note=document.querySelector('#modal .v16-locked-msg');if(note){note.replaceChildren();const title=document.createElement('b');title.textContent='当日以外の授業：閲覧専用';const p=document.createElement('div');p.textContent=message;note.append(title,p);}if(l?.plan){const row=document.createElement('div');row.className='v16-view-row';const label=document.createElement('dt');label.textContent='今回の予定';const value=document.createElement('dd');value.textContent=l.plan;row.append(label,value);document.querySelector('#modal .v16-view-dl')?.prepend(row);}return result;};
+ const oldDeskDraft=deskDraft;
+ deskDraft=function(i){const seat=extra.desk.seats[i],w=extra.desk;if(!seat||allowed(w.date))return oldDeskDraft(i);const key=draftKey(seat.student,seat.subject,w.date,w.slot,w.teacher),saved=db.deskDrafts[key],lesson=db.lessons.find(l=>l.student===seat.student&&l.subject===seat.subject&&l.date===w.date&&l.slot===w.slot&&l.teacher===w.teacher);return clone(saved||lesson&&draftFrom(lesson)||blankDraft(seat.student,seat.subject,w.date,w.slot,w.teacher));};
+ const oldRenderEntry=renderEntry;
+ renderEntry=function(d,token){if(!allowed(d.date,v16RecordForDraft(d)))return '<section class="v16-locked-panel"><div class="v16-locked-msg"><b>当日以外の授業：閲覧専用</b><div>'+message+'</div></div><button type="button" class="btn small mt" data-lesson-day-view="'+esc(token)+'">記録の内容を確認</button></section>';return oldRenderEntry(d,token);};
+ document.addEventListener('click',e=>{const b=e.target.closest('[data-lesson-day-view]');if(b){const d=getEditor(b.dataset.lessonDayView);if(d)v16ReadOnly(d);}});
+ const oldCapture=captureEntry;
+ captureEntry=function(token){const d=getEditor(token);return d&&!allowed(d.date,v16RecordForDraft(d))?d:oldCapture(token);};
+ const oldOpen=openLesson,oldReview=reviewLesson,oldDraft=v8OpenDraft,oldMark=markReviewed;
+ openLesson=function(id=''){const l=id&&db.lessons.find(x=>x.id===id);return l&&!allowed(l.date)?v16ReadOnly(l):oldOpen(id);};
+ reviewLesson=function(id){const l=db.lessons.find(x=>x.id===id);return l&&!allowed(l.date)?v16ReadOnly(l):oldReview(id);};
+ v8OpenDraft=function(key){const d=db.deskDrafts[key];return d&&!allowed(d.date,v16RecordForDraft(d))?v16ReadOnly(d):oldDraft(key);};
+ markReviewed=function(id){const l=db.lessons.find(x=>x.id===id);return l&&!allowed(l.date)?v16Deny():oldMark(id);};
+ const oldAuto=v12AutoSaveSession,oldSave=saveSession,oldAdd=addStudentToDesk,oldReplace=replaceDeskStudent,oldSubject=setDeskSubject;
+ v12AutoSaveSession=function(){if(allowed(extra.desk.date))return oldAuto();};
+ saveSession=function(){return allowed(extra.desk.date)?oldSave():v16Deny();};
+ addStudentToDesk=function(id){return allowed(extra.desk.date)?oldAdd(id):v16Deny();};
+ replaceDeskStudent=function(i,id){return allowed(extra.desk.date)?oldReplace(i,id):v16Deny();};
+ setDeskSubject=function(i,sub){return allowed(extra.desk.date)?oldSubject(i,sub):v16Deny();};
+ const oldRemove=removeDeskSeat,oldAddSeat=addDeskSeat;
+ removeDeskSeat=function(i){return allowed(extra.desk.date)?oldRemove(i):v16Deny();};
+ addDeskSeat=function(){return allowed(extra.desk.date)?oldAddSeat():v16Deny();};
+ const oldChoose=chooseStudent;
+ chooseStudent=function(id){return extra.picker?.target==='desk'&&!allowed(extra.desk.date)?v16Deny():oldChoose(id);};
+ const oldRender=render;
+ render=function(...args){const result=oldRender(...args);if(state.page==='desk'&&!allowed(extra.desk.date)){
+  const content=document.getElementById('content');if(!content.querySelector('[data-lesson-day-note]')){const p=document.createElement('p');p.dataset.lessonDayNote='';p.className='v16-locked-msg';p.textContent=message;content.querySelector('.desk-toolbar')?.after(p);}
+  for(const el of content.querySelectorAll('[onclick],[onchange],#scan-student')){const action=(el.getAttribute('onclick')||'')+' '+(el.getAttribute('onchange')||'');if(el.id==='scan-student'||/openStudentPicker\('desk'|saveSession\(|setDeskSubject\(|removeDeskSeat\(|clearDeskSeat\(|addDeskSeat\(/.test(action)){if('disabled'in el)el.disabled=true;}}
+ }return result;};
+ window.ManabiLessonDay={allowed,today,canPrepare:()=>allowed(extra.desk.date),deny:v16Deny};
+})();
+
+/* Page-aware HID input. The off-screen receiver accepts input/IME events too;
+   explicit material fields retain their own student and are never routed here. */
 (()=>{
  const pages=new Set(['home','desk','roster','profile','history','exams','qualifications','reports','daily','notes','master','audit']);
- let burst='',last=0,composing=false;
- const clear=()=>{burst='';last=0;};
- const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
+ let burst='',last=0,timer,receiver,receiving=false,ordinaryComposition=false,page='';const gate=ManabiScan.createScanGate(),target={};
+ const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId&&pages.has(state.page);
+ const blocked=()=>!!document.querySelector('dialog[open]')||document.getElementById('v13-board-shade')?.hidden===false;
+ const clear=()=>{burst='';last=0;clearTimeout(timer);if(receiver)receiver.value='';};
  function dispatch(value){
-  if(!ready()||!pages.has(state.page))return false;
+  if(!ready())return false;
   const student=ManabiScan.resolveScan(value,{kind:'student',items:db.students});
   const teacher=window.ManabiTeacherScan?.resolve(value),credential=ManabiScan.staffCredential(value);
-  if(state.page==='daily'&&(credential||teacher?.matches.length)){void ManabiTeacherScan.scanInContext(value);return true;}
-  if(student.matches.length||ManabiScan.codeKind(ManabiScan.decodeASCII(value)||value)==='student'){ManabiStudentSelect.scanInContext(value);return true;}
-  if(ManabiScan.codeKind(value)==='material'){toast('教材は、対象生徒の教材名欄を選んで読み取ってください。');return true;}
+  if(state.page==='daily'&&(credential||teacher?.matches.length)){if(gate.accept(target,value))void ManabiTeacherScan.scanInContext(value);return true;}
+  if(student.matches.length||ManabiScan.codeKind(ManabiScan.decodeASCII(value)||value)==='student'){if(gate.accept(target,value))ManabiStudentSelect.scanInContext(value);return true;}
+  if(ManabiScan.codeKind(ManabiScan.decodeASCII(value)||value)==='material'){toast('教材は、対象生徒の教材名欄を選んで読み取ってください。');return true;}
   if(ManabiScan.looksLikeScan(value,'student')){toast('この画面で使えるバーコードを確認してください。');return true;}
   return false;
  }
- window.addEventListener('compositionstart',()=>{composing=true;clear();},true);
- window.addEventListener('compositionend',()=>{composing=false;clear();},true);
- window.addEventListener('blur',clear);
- window.addEventListener('pointerdown',clear,true);
- window.addEventListener('keydown',event=>{
-  const editable=event.target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])');
-  const dialogs=[...document.querySelectorAll('dialog[open]')],blockedDialog=dialogs.some(d=>d.id!=='picker-dialog');
-  if(!ready()||!pages.has(state.page)||event.defaultPrevented||editable||blockedDialog||composing||ManabiScan.isComposing(event)||event.ctrlKey||event.metaKey||event.altKey){clear();return;}
-  if(ManabiScan.isTerminator(event)){
-   const value=burst,recent=Date.now()-last<650;clear();
-   if(value.length>=3&&recent){const result=dispatch(value);if(result){event.preventDefault();event.stopImmediatePropagation();}}
-   return;
+ function finish(explicit=false){
+  const value=burst||receiver?.value||'';clear();if(!value||!ready()||blocked())return;
+  const s=ManabiScan.resolveScan(value,{kind:'student',items:db.students}),t=window.ManabiTeacherScan?.resolve(value);
+  if(explicit||s.matches.length||state.page==='daily'&&(t?.matches.length||ManabiScan.staffCredential(value))||/^(?:D-\d{3,}|MAT-\d{6,})$/.test(ManabiScan.decodeASCII(value)||ManabiScan.normalizeScan(value)))dispatch(value);
+ }
+ const schedule=()=>{clearTimeout(timer);timer=setTimeout(()=>finish(false),260);};
+ function focus(){
+  if(!ready()||blocked()||document.hidden)return;
+  const active=document.activeElement;
+  if(active&&active!==document.body&&active!==receiver&&active.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])'))return;
+  receiver?.focus({preventScroll:true});
+ }
+ function mount(){
+  if(!receiver){receiver=document.createElement('input');receiver.type='password';receiver.inputMode='none';receiver.autocomplete='off';receiver.autocapitalize='none';receiver.spellcheck=false;receiver.maxLength=600;receiver.tabIndex=-1;receiver.dataset.manabiHid='';receiver.setAttribute('aria-label','バーコード読取待機');receiver.style.cssText='position:fixed;left:0;bottom:0;width:1px;height:1px;opacity:0;pointer-events:none;padding:0;border:0;';document.body.append(receiver);
+   receiver.addEventListener('compositionstart',()=>{receiving=true;clearTimeout(timer);});
+   receiver.addEventListener('compositionend',()=>{receiving=false;if(!burst)burst=receiver.value;last=Date.now();schedule();});
+   receiver.addEventListener('input',e=>{if(e.isComposing||receiving)return;burst=receiver.value;last=Date.now();schedule();});
   }
-  if(event.key.length!==1){if(event.key!=='Shift')clear();return;}
-  const now=Date.now();if(now-last>350)burst='';last=now;burst=(burst+event.key).slice(-600);
+  if(page!==state.page){page=state.page;clear();gate.clear(target);}focus();
+ }
+ // Physical key codes avoid the Japanese keyboard's IME changing ID characters.
+ function character(e){if(/^Key[A-Z]$/.test(e.code))return e.code.slice(3);if(/^(Digit|Numpad)\d$/.test(e.code))return e.code.at(-1);if(e.code==='Minus')return '-';return e.key?.length===1?e.key:'';}
+ window.addEventListener('blur',clear);
+ window.addEventListener('compositionstart',e=>{if(e.target!==receiver){ordinaryComposition=true;clear();}},true);
+ window.addEventListener('compositionend',e=>{if(e.target!==receiver){ordinaryComposition=false;clear();}},true);
+ window.addEventListener('pointerdown',clear,true);
+ document.addEventListener('click',()=>queueMicrotask(focus));
+ window.addEventListener('focus',()=>queueMicrotask(focus));
+ window.addEventListener('keydown',event=>{
+  const editable=event.target?.closest?.('input,textarea,[contenteditable]:not([contenteditable="false"])');
+  if(!ready()||event.defaultPrevented||editable&&editable!==receiver||blocked()||ordinaryComposition||event.ctrlKey||event.metaKey||event.altKey){clear();return;}
+  if(['Enter','Tab'].includes(event.key)||['Enter','NumpadEnter','Tab'].includes(event.code)){
+   if(burst||receiver?.value){event.preventDefault();event.stopImmediatePropagation();finish(true);}return;
+  }
+  const key=character(event);if(!key){if(!['Shift','Unidentified','Process'].includes(event.key))clear();return;}
+  if(!burst&&key===' ')return; // Keep Space activation of ordinary buttons.
+  // A scanner may pause for Bluetooth scheduling; completion is decided after
+  // the burst settles, not as soon as a shorter ID happens to match a prefix.
+  const now=Date.now();if(now-last>1200)burst='';last=now;burst=(burst+key).slice(-600);
+  event.preventDefault();event.stopImmediatePropagation();schedule();
  },true);
- window.ManabiHID={dispatch,clear};
+ const previous=render;render=function(...args){const out=previous(...args);mount();return out;};
+ window.ManabiHID={dispatch,clear,focus};mount();
 })();
 
 // Internal sharing is a separate output; parent-facing report bodies are untouched.
