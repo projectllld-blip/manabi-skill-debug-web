@@ -46,3 +46,14 @@ dialog[open] .v9-missing-notice:not(.complete){display:block!important}
 .attendance-lesson{padding:16px 0;border-top:1px solid #dbe3df}.attendance-lesson:first-of-type{margin-top:16px}.attendance-lesson dd{margin:4px 0 12px;overflow-wrap:anywhere}.attendance-lesson dt{font-size:12px;font-weight:700;color:#52645d}.attendance-lesson .preline{white-space:pre-wrap}
 @media(max-width:750px){.v14-attend-table .attendance-link{display:block}.report-student-top .registered-tags{display:flex;flex-wrap:wrap;gap:6px}}
 @media print{.shared-sync-status,.workflow-tools{display:none!important}}
+
+.material-title-edit{border:0;background:none;color:var(--brand,#28634e);font:inherit;font-weight:700;text-align:left;padding:7px 0;cursor:pointer;text-decoration:underline;text-underline-offset:3px;white-space:normal;overflow-wrap:anywhere}
+.material-title-edit:focus-visible{outline:2px solid var(--brand,#28634e);outline-offset:3px}
+.staff-profile-dialog{width:min(940px,94vw);max-height:92vh}
+.staff-profile-dialog>.row{align-items:flex-end;gap:12px;flex-wrap:wrap}
+.staff-profile-dialog .field{min-width:140px;max-width:100%}
+.staff-profile-dialog input{max-width:100%}
+.staff-profile-preview{background:#edf0ed;padding:16px;margin-top:12px}
+.staff-profile-page{width:100%;max-width:720px;margin:0 auto 16px!important;padding:22px!important;min-height:0!important;box-sizing:border-box;background:white}
+.staff-profile-page svg{display:block;width:100%;height:auto;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif}
+@media print{#print-root .staff-profile-page{padding:0!important;margin:0!important;width:184mm!important;max-width:184mm!important;min-height:0!important;height:259mm!important;break-after:page;page-break-after:always}#print-root .staff-profile-page:last-child{break-after:auto;page-break-after:auto}#print-root .staff-profile-page svg{height:auto!important;width:184mm!important}}

@@ -138,7 +138,7 @@ var ManabiScan = (() => {
 (()=>{
  const auth=window.ManabiAuth,status=document.getElementById('login-status'),staffForm=document.getElementById('staff-form'),passwordForm=document.getElementById('staff-password-form');
  const scan=staffForm.elements.barcode,panel=document.getElementById('staff-panel');
- let method='barcode',staffBusy=false;
+ let method='barcode',staffBusy=false,burst='',lastKey=0,composing=false;
  const say=message=>{status.textContent=message;};
  const normalizeBarcode=value=>ManabiScan.staffCredential(value)||ManabiScan.normalizeScan(value);
  const scanGate=ManabiScan.createScanGate();
@@ -161,7 +161,7 @@ var ManabiScan = (() => {
   for(const b of panel.querySelectorAll('button'))b.disabled=true;
   say('ログインしています…');
   try{const result=await auth.api('staff/login','POST',body);scan.value='';passwordForm.elements.password.value='';auth.setStaffToken(result.token);await proceed();}
-  catch(error){scanGate.clear(scan);scan.value='';passwordForm.elements.password.value='';say(error.message);if(method==='barcode')scan.focus();}
+  catch(error){scanGate.clear(scan);scan.value='';passwordForm.elements.password.value='';say(error.status===401&&body.barcode?'カードを確認できませんでした。最新の「講師ログインカード」を使用してください。講師ID・パスワードでもログインできます。':error.message);if(method==='barcode')scan.focus();}
   finally{staffBusy=false;for(const b of panel.querySelectorAll('button'))b.disabled=false;}
  }
  const isStaffBarcode=value=>/^(?:TL-[A-F0-9]{48}|91[0-9]{30})$/.test(value);
@@ -170,6 +170,20 @@ var ManabiScan = (() => {
  // Readers with or without an Enter suffix and pasted card numbers use the same path.
  scan.addEventListener('input',event=>{if(event.isComposing)return;const barcode=normalizeBarcode(scan.value);if(!panel.hidden&&method==='barcode'){if(/^MAT-[0-9]{6,}$/.test(barcode))rejectBarcode();else if(isStaffBarcode(barcode)&&scanGate.accept(scan,barcode))void loginStaff({barcode});}});
  scan.addEventListener('keydown',event=>{if(!event.isComposing&&event.keyCode!==229&&(event.key==='Enter'||event.key==='Tab'&&scan.value.trim())){event.preventDefault();void staffForm.onsubmit(event);}});
+ // HID readers also work after a tap on the page or a login-method button.
+ // Do not intercept ordinary ID/password typing, IME composition, or shortcuts.
+ document.addEventListener('compositionstart',()=>{composing=true;burst='';});
+ document.addEventListener('compositionend',()=>{composing=false;burst='';});
+ window.addEventListener('keydown',event=>{
+  const editable=event.target?.closest('input,textarea,select,[contenteditable]');
+  if(staffBusy||editable||composing||ManabiScan.isComposing(event)||event.ctrlKey||event.metaKey||event.altKey){burst='';return;}
+  const time=Date.now();if(time-lastKey>650)burst='';
+  if(ManabiScan.isTerminator(event)&&burst){const value=burst;burst='';event.preventDefault();event.stopImmediatePropagation();selectMethod('barcode');scan.value=value;void staffForm.onsubmit(event);return;}
+  if(event.key.length!==1)return;
+  if(time-lastKey>350)burst='';lastKey=time;burst=(burst+event.key).slice(-600);
+  const barcode=ManabiScan.staffCredential(burst);
+  if(barcode){burst='';event.preventDefault();event.stopImmediatePropagation();selectMethod('barcode');scan.value=barcode;void staffForm.onsubmit(event);}
+ },true);
  passwordForm.onsubmit=event=>{event.preventDefault();if(/^MAT-/i.test(passwordForm.elements.login_id.value.normalize('NFKC').trim())){passwordForm.elements.password.value='';say('教材バーコードは講師IDとして使えません。講師IDを入力してください。');return;}return loginStaff({method:'password',login_id:passwordForm.elements.login_id.value,password:passwordForm.elements.password.value});};
  document.getElementById('forgot').onclick=()=>say('パスワードの再設定は代表へ依頼してください。');
  selectMethod(method);

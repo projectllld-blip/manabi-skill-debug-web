@@ -2829,6 +2829,135 @@ var ManabiBarcode = (() => {
 
 barcodeSVG=ManabiBarcode.barcodeSVG;
 
+var ManabiStaffProfile = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // shared/staff-profile.mjs
+  var staff_profile_exports = {};
+  __export(staff_profile_exports, {
+    PROFILE_PAGE: () => PROFILE_PAGE,
+    profilePages: () => profilePages,
+    profileSections: () => profileSections
+  });
+  function profileSections(db, sid, { subject = "", axes = [] } = {}) {
+    const s = (db.students || []).find((x) => x.id === sid);
+    if (!s) return null;
+    const policies = db.policies || [], lessons = (db.lessons || []).filter((x) => x.student === sid && x.status !== "\u4E0B\u66F8\u304D").sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.slot).localeCompare(String(a.slot)) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+    const getPolicy = (sub) => policies.filter((x) => x.student === sid && x.subject === sub).sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))[0];
+    const sections = [], add = (title, text) => sections.push({ title, text: String(text || "\u672A\u767B\u9332") });
+    const meta = (x) => [x?.updatedAt?.slice(0, 10), x?.updatedBy].filter(Boolean).join(" \uFF0F ");
+    add("\u57FA\u672C\u60C5\u5831", [`${s.name} \uFF0F ${s.code || s.id}`, `${s.grade || ""} \uFF0F ${s.schoolName || "\u5B66\u6821\u672A\u767B\u9332"} \uFF0F ${s.school || ""}`, `\u53D7\u8B1B\u6559\u79D1\uFF1A${(s.subjects || []).join("\u30FB") || "\u672A\u767B\u9332"}`, `\u53D7\u8B1B\u533A\u5206\uFF1A${(s.attributes || []).join("\u30FB") || "\u672A\u767B\u9332"}`].join("\n"));
+    const all = getPolicy("\u5168\u4F53");
+    add("\u5168\u4F53\u306E\u6307\u5C0E\u65B9\u91DD\u30FB\u63A5\u3057\u65B9", all ? [all.text, meta(all)].filter(Boolean).join("\n") : "\u672A\u767B\u9332");
+    const handovers = (db.handovers || []).filter((x) => x.student === sid && x.status !== "\u5BFE\u5FDC\u6E08\u307F" && (!subject || x.subject === "\u5168\u4F53" || x.subject === subject)).sort((a, b) => Number(b.priority === "\u91CD\u8981") - Number(a.priority === "\u91CD\u8981") || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+    add("\u62C5\u5F53\u8B1B\u5E2B\u3078\u306E\u9023\u7D61\u4E8B\u9805\uFF08\u7D99\u7D9A\u4E2D\uFF09", handovers.map((x) => `\u3010${x.subject || "\u5168\u4F53"}\u30FB${x.priority || "\u901A\u5E38"}\u3011${x.text}
+${meta(x) || x.author || ""}`).join("\n\n") || "\u7D99\u7D9A\u4E2D\u306E\u9023\u7D61\u4E8B\u9805\u306F\u3042\u308A\u307E\u305B\u3093\u3002");
+    const subjects = subject ? [subject] : [.../* @__PURE__ */ new Set([...s.subjects || [], ...policies.filter((x) => x.student === sid).map((x) => x.subject), ...lessons.map((x) => x.subject), ...(db.assessments || []).filter((x) => x.student === sid).map((x) => x.subject), ...(db.profileObservations || []).filter((x) => x.studentId === sid).map((x) => x.subject)])].filter((x) => x && x !== "\u5168\u4F53");
+    for (const sub of subjects) {
+      const p = getPolicy(sub), l = lessons.find((x) => x.subject === sub), a = (db.assessments || []).filter((x) => x.student === sid && x.subject === sub).sort((x, y) => String(y.date).localeCompare(String(x.date)) || String(y.createdAt || "").localeCompare(String(x.createdAt || "")))[0];
+      add(sub + "\uFF5C\u6307\u5C0E\u65B9\u91DD\u30FB\u6559\u79D1\u76EE\u6A19", p ? [p.text, meta(p)].filter(Boolean).join("\n") : "\u672A\u767B\u9332");
+      add(sub + "\uFF5C\u73FE\u5728\u306E\u5B66\u7FD2\u72B6\u6CC1\u30FB\u7559\u610F\u70B9", l ? `${l.date} ${l.slot || ""} \uFF0F ${l.teacher || "\u62C5\u5F53\u672A\u767B\u9332"}
+\u5358\u5143\uFF1A${l.unit || "\u672A\u767B\u9332"}
+\u3067\u304D\u305F\u3053\u3068\u30FB\u6C17\u3065\u304D\uFF1A${l.obs || "\u672A\u767B\u9332"}
+\u3064\u307E\u305A\u304D\uFF1A${Array.isArray(l.stumbles) ? l.stumbles.join("\u30FB") : l.stumbles || "\u672A\u767B\u9332"}
+\u5230\u9054\u5EA6\uFF1A${l.level == null ? "\u672A\u8A55\u4FA1" : l.level + " / 4"}` : "\u4FDD\u5B58\u6E08\u307F\u306E\u6388\u696D\u8A18\u9332\u306F\u3042\u308A\u307E\u305B\u3093\u3002");
+      const mats = Array.isArray(l?.materials) ? l.materials : [{ name: l?.material, pages: l?.pages }];
+      add(sub + "\uFF5C\u4F7F\u7528\u6559\u6750\u30FB\u6B21\u56DE\u306E\u9032\u3081\u65B9", "\u6388\u696D\u6559\u6750\uFF1A" + (mats.map((m) => [m.name, m.pages, m.content].filter(Boolean).join(" \uFF0F ")).filter(Boolean).join("\n") || "\u672A\u767B\u9332") + "\n\u6B21\u56DE\u306E\u53D6\u308A\u7D44\u307F\uFF1A" + (l?.next || "\u672A\u767B\u9332"));
+      const homework = (l?.homeworkItems || []).map((x) => [x.name, x.pages, x.instruction].filter(Boolean).join(" \uFF0F ")).filter(Boolean).join("\n");
+      add(sub + "\uFF5C\u5BBF\u984C\u30FB\u5BB6\u5EAD\u5B66\u7FD2\u306E\u53D6\u308A\u7D44\u307F", [homework || l?.homework, l?.homeworkNote].filter(Boolean).join("\n") || "\u672A\u767B\u9332");
+      if (l?.internal) add(sub + "\uFF5C\u76F4\u8FD1\u6388\u696D\u306E\u5185\u90E8\u30E1\u30E2", l.internal);
+      const names = a?.axisNames || axes;
+      add(sub + "\uFF5C\u30B9\u30AD\u30EB\u8A55\u4FA1\u3068\u6839\u62E0", a ? `\u8A55\u4FA1\u65E5\uFF1A${a.date} \uFF0F ${a.author || "\u8A18\u9332\u8005\u672A\u767B\u9332"}
+` + names.map((n, i) => `${n}\uFF1A${a.values?.[i] == null ? "\u672A\u8A55\u4FA1" : a.values[i] + " / 4"} \uFF0F \u6839\u62E0\uFF1A${a.evidence?.[i] || "\u672A\u767B\u9332"}`).join("\n") : "\u672A\u8A55\u4FA1");
+      const notes = (db.profileObservations || []).filter((x) => x.studentId === sid && x.subject === sub).sort((x, y) => String(y.at || "").localeCompare(String(x.at || ""))).slice(0, 3);
+      if (notes.length) add(sub + "\uFF5C\u8B1B\u5E2B\u306E\u6240\u898B\uFF08\u76F4\u8FD13\u4EF6\uFF09", notes.map((x) => `${x.at?.slice(0, 10) || ""} \uFF0F ${x.teacher || ""}
+${x.text}`).join("\n\n"));
+    }
+    return { sid, name: s.name, code: s.code || s.id, sections };
+  }
+  var PROFILE_PAGE = { width: 520, height: 730 };
+  var wrap = (value, max) => {
+    const out = [];
+    for (const paragraph of String(value).split(/\r?\n/)) {
+      let line = "", n = 0;
+      for (const c of paragraph) {
+        const size = c.codePointAt(0) > 65535 ? 2 : 1;
+        if (n + size > max) {
+          out.push(line);
+          line = "";
+          n = 0;
+        }
+        line += c;
+        n += size;
+      }
+      out.push(line);
+    }
+    return out;
+  };
+  function profilePages(profiles, { date = "" } = {}) {
+    const pages = [];
+    for (const profile of profiles.filter(Boolean)) {
+      let commands = [], y = 0;
+      const start = () => {
+        commands = [{ text: "\u751F\u5F92\u5B66\u7FD2\u30AB\u30EB\u30C6 \uFF0F \u8B1B\u5E2B\u5171\u6709\u7528", x: 0, y: 0, size: 15, bold: true }, { text: "\u5185\u90E8\u8CC7\u6599\u30FB\u4FDD\u8B77\u8005\u914D\u5E03\u4E0D\u53EF", x: 0, y: 25, size: 10, bold: true }];
+        y = 44;
+        const header = wrap(`${profile.name} \uFF0F ${profile.code}\u3000\u4F5C\u6210\u65E5 ${date}`, 55);
+        header.slice(0, 2).forEach((text, i) => {
+          commands.push({ text: i === 1 && header.length > 2 ? text.slice(0, 54) + "\u2026" : text, x: 0, y, size: 9 });
+          y += 13;
+        });
+        y += 15;
+      };
+      const end = () => {
+        pages.push({ sid: profile.sid, commands });
+      };
+      start();
+      for (const section of profile.sections) {
+        const lines = wrap(section.text, 52);
+        let offset = 0;
+        while (offset < lines.length) {
+          if (y + 48 > 698) {
+            end();
+            start();
+          }
+          commands.push({ text: section.title + (offset ? "\uFF08\u7D9A\u304D\uFF09" : ""), x: 0, y, size: 11, bold: true });
+          y += 22;
+          while (offset < lines.length && y + 14 <= 698) {
+            commands.push({ text: lines[offset++], x: 5, y, size: 9.5 });
+            y += 14;
+          }
+          y += 12;
+          if (offset < lines.length) {
+            end();
+            start();
+          }
+        }
+      }
+      end();
+    }
+    pages.forEach((p, i) => p.commands.push({ text: `\u8B1B\u5E2B\u5171\u6709\u7528\u30FB\u4FDD\u8B77\u8005\u914D\u5E03\u4E0D\u53EF\u3000\u3000${i + 1} / ${pages.length}`, x: 0, y: 715, size: 8 }));
+    return pages;
+  }
+  return __toCommonJS(staff_profile_exports);
+})();
+
+
 // The legacy scanner still used a student's primary school after membership
 // became multi-classroom. Resolve a unique active student before changing view.
 (()=>{
@@ -3426,4 +3555,69 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
   const now=Date.now();if(now-last>350)burst='';last=now;burst=(burst+event.key).slice(-600);
  },true);
  window.ManabiHID={dispatch,clear};
+})();
+
+// Internal sharing is a separate output; parent-facing report bodies are untouched.
+(()=>{
+ const buttonHTML='<button type="button" class="btn" data-staff-profile-print>講師共有カルテを印刷</button>';
+ for(const [name,old]of [['profile',renderProfile],['reports',renderReports]]){
+  const wrapped=function(...args){const root=document.createElement('div');root.innerHTML=old(...args);const anchor=name==='profile'?root.querySelector('.pagehead .row'):root.querySelector('.report-student-top');(anchor||root.querySelector('.pagehead')||root).insertAdjacentHTML('beforeend',buttonHTML);if(name==='profile'){const parent=root.querySelector('[onclick="toReports()"]');if(parent)parent.textContent='保護者向け報告書';}return root.innerHTML;};
+  if(name==='profile')renderProfile=wrapped;else renderReports=wrapped;
+ }
+ function show(ids){
+  if(window.DebugContext?.locked)return;
+  ids=[...new Set(ids)].filter(id=>db.students.some(s=>s.id===id));
+  if(!ids.length){toast('印刷する生徒を選んでください。');return;}
+  const d=document.createElement('dialog');d.className='debug-dialog staff-profile-dialog';
+  const h=document.createElement('h2');h.textContent='講師共有カルテ（内部資料）';
+  const controls=document.createElement('div');controls.className='row';
+  const label=document.createElement('label');label.className='field';label.textContent='教科';const select=document.createElement('select');select.setAttribute('aria-label','共有カルテの教科');
+  const subjects=[...new Set(ids.flatMap(id=>[...(db.students.find(s=>s.id===id)?.subjects||[]),...(db.policies||[]).filter(p=>p.student===id).map(p=>p.subject),...(db.lessons||[]).filter(l=>l.student===id).map(l=>l.subject)]))].filter(s=>s&&s!=='全体');
+  for(const [value,text]of [['','全教科'],...subjects.map(s=>[s,s])]){const opt=document.createElement('option');opt.value=value;opt.textContent=text;select.append(opt);}label.append(select);
+  const button=(text,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=text;b.onclick=fn;return b;};
+  const status=document.createElement('p');status.setAttribute('role','status');
+  const preview=document.createElement('div');preview.className='staff-profile-preview';
+  const fileLabel=document.createElement('label');fileLabel.className='field';fileLabel.textContent='PDFの保存名';const filename=document.createElement('input');filename.value='講師共有カルテ_'+(ids.length===1?db.students.find(s=>s.id===ids[0]).name:ids.length+'名');filename.maxLength=120;fileLabel.append(filename);
+  let pages=[],closed=false,busy=false;
+  const print=button('A4で印刷',()=>{if(closed||window.DebugContext?.locked)return;const root=document.getElementById('print-root');root.replaceChildren(...[...preview.children].map(n=>n.cloneNode(true)));try{window.print();}catch{status.textContent='印刷画面を開けませんでした。もう一度押してください。';}});
+  const save=button('PDFを保存',async()=>{
+   if(busy||closed||window.DebugContext?.locked)return;busy=true;save.disabled=true;select.disabled=true;status.textContent='PDFを作成しています…';
+   try{await document.fonts?.ready;const out=await ManabiPrintPDF.createProfilePDF(pages,{rasterize:ManabiPrintExport.rasterize});if(closed||window.DebugContext?.locked)return;
+    const url=URL.createObjectURL(new Blob([out.bytes],{type:'application/pdf'})),a=document.createElement('a');a.href=url;a.download=(filename.value.trim()||'講師共有カルテ').replace(/[\\/:*?"<>|\u0000-\u001f]/g,'_').replace(/\.pdf$/i,'')+'.pdf';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);status.textContent=out.pageCount+'ページのPDFを保存しました。';
+   }catch(error){if(!closed)status.textContent=error.message||'PDFを保存できませんでした。';}finally{busy=false;save.disabled=false;select.disabled=false;}
+  });
+  function paint(){const date=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'});pages=ManabiStaffProfile.profilePages(ids.map(sid=>ManabiStaffProfile.profileSections(db,sid,{subject:select.value,axes:AXES})),{date});
+   const {width,height}=ManabiStaffProfile.PROFILE_PAGE;
+   preview.innerHTML=pages.map((p,i)=>'<section class="report-page staff-profile-page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+width+' '+height+'" role="img" aria-label="講師共有用カルテ '+(i+1)+'ページ">'+p.commands.map(c=>'<text x="'+c.x+'" y="'+(c.y+c.size)+'" font-size="'+c.size+'" font-weight="'+(c.bold?700:400)+'" fill="#24362d">'+esc(c.text)+'</text>').join('')+'</svg></section>').join('');status.textContent=ids.length+'名 ／ '+pages.length+'ページ・現在の指導方針と最新の保存済み授業を出力します。';
+  }
+  select.onchange=paint;controls.append(label,print,fileLabel,save,button('閉じる',()=>d.close()));d.append(h,controls,status,preview);document.body.append(d);d.showModal();paint();
+  d.addEventListener('close',()=>{closed=true;pages=[];preview.replaceChildren();document.querySelectorAll('#print-root .staff-profile-page').forEach(n=>n.remove());d.remove();});
+ }
+ document.addEventListener('click',e=>{if(e.target.closest('[data-staff-profile-print]'))show(state.page==='reports'?state.report.students:[state.student]);});
+ window.ManabiStaffProfilePrint={show};
+ window.addEventListener('afterprint',()=>document.querySelectorAll('#print-root .staff-profile-page').forEach(n=>n.remove()));
+})();
+
+// Native dialogs share light-dismiss. The announcement board keeps its explicit
+// acknowledgement button. Dispatch cancel so existing in-flight save guards run.
+(()=>{
+ let pressed=null;
+ const outside=(d,e)=>{const r=d.getBoundingClientRect();return e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom;};
+ const target=e=>e.target?.matches?.('dialog[open]')&&!e.target.closest('#v13-board-shade')?e.target:null;
+ document.addEventListener('pointerdown',e=>{const d=target(e);pressed=e.button===0&&d&&outside(d,e)?d:null;},true);
+ document.addEventListener('pointercancel',()=>{pressed=null;},true);
+ document.addEventListener('click',e=>{
+  const d=target(e),start=pressed;pressed=null;
+  if(!d||!outside(d,e))return;
+  // Supersede the older per-dialog click handlers, including a drag that started
+  // inside and a cancel rejected while a save is running.
+  e.preventDefault();e.stopImmediatePropagation();
+  if(d!==start)return;
+  if(!d.dispatchEvent(new Event('cancel',{cancelable:true})))return;
+  if(d.id==='modal'){
+   if(typeof captureVisibleEditors==='function')captureVisibleEditors();
+   closeModal();
+  }else if(d.id==='picker-dialog')closePicker();
+  else d.close();
+ },true);
 })();
