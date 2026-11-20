@@ -2507,3 +2507,253 @@ v15MountTeacherHistory=function(){document.getElementById('v15-instructor-histor
 v15RefreshTeacherHistory=function(){document.getElementById('v15-instructor-history')?.remove();};
 document.title='学びのスキルカルテ v17｜授業した生徒を授業欄へ自動表示';
 
+
+var ManabiBarcode = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // shared/barcode.mjs
+  var barcode_exports = {};
+  __export(barcode_exports, {
+    barcodeSVG: () => barcodeSVG
+  });
+  var CODE39_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%";
+  var CODE39_PATTERNS = [
+    52,
+    289,
+    97,
+    352,
+    49,
+    304,
+    112,
+    37,
+    292,
+    100,
+    265,
+    73,
+    328,
+    25,
+    280,
+    88,
+    13,
+    268,
+    76,
+    28,
+    259,
+    67,
+    322,
+    19,
+    274,
+    82,
+    7,
+    262,
+    70,
+    22,
+    385,
+    193,
+    448,
+    145,
+    400,
+    208,
+    133,
+    388,
+    196,
+    168,
+    162,
+    138,
+    42
+  ];
+  /*! Code 128 symbol table adapted from JsBarcode (MIT).
+   * Copyright (c) 2016 Johan Lindell (johan@lindell.me)
+   * Permission is hereby granted, free of charge, to any person obtaining a copy
+   * of this software and associated documentation files (the "Software"), to deal
+   * in the Software without restriction, including without limitation the rights
+   * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   * copies of the Software, and to permit persons to whom the Software is
+   * furnished to do so, subject to the following conditions:
+   * The above copyright notice and this permission notice shall be included in
+   * all copies or substantial portions of the Software.
+   * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   * THE SOFTWARE.
+   */
+  var CODE128_BITS = `11011001100 11001101100 11001100110 10010011000 10010001100
+10001001100 10011001000 10011000100 10001100100 11001001000
+11001000100 11000100100 10110011100 10011011100 10011001110
+10111001100 10011101100 10011100110 11001110010 11001011100
+11001001110 11011100100 11001110100 11101101110 11101001100
+11100101100 11100100110 11101100100 11100110100 11100110010
+11011011000 11011000110 11000110110 10100011000 10001011000
+10001000110 10110001000 10001101000 10001100010 11010001000
+11000101000 11000100010 10110111000 10110001110 10001101110
+10111011000 10111000110 10001110110 11101110110 11010001110
+11000101110 11011101000 11011100010 11011101110 11101011000
+11101000110 11100010110 11101101000 11101100010 11100011010
+11101111010 11001000010 11110001010 10100110000 10100001100
+10010110000 10010000110 10000101100 10000100110 10110010000
+10110000100 10011010000 10011000010 10000110100 10000110010
+11000010010 11001010000 11110111010 11000010100 10001111010
+10100111100 10010111100 10010011110 10111100100 10011110100
+10011110010 11110100100 11110010100 11110010010 11011011110
+11011110110 11110110110 10101111000 10100011110 10001011110
+10111101000 10111100010 11110101000 11110100010 10111011110
+10111101110 11101011110 11110101110 11010000100 11010010000
+11010011100 1100011101011`.split(/\s+/);
+  var escapeHTML = (value) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+  function barcodeSVG(code, small = false) {
+    const text = String(code ?? "").trim().toUpperCase();
+    const staff = /^TL-[A-F0-9]{48}$/.test(text);
+    if (!text || !staff && [...text].some((ch) => !CODE39_CHARS.includes(ch))) {
+      return '<span class="small" style="color:#a33">\u756A\u53F7\u306B\u30D0\u30FC\u30B3\u30FC\u30C9\u975E\u5BFE\u5FDC\u6587\u5B57\u304C\u3042\u308A\u307E\u3059</span>';
+    }
+    let bits;
+    if (staff) {
+      const values = [...text].map((ch) => ch.charCodeAt(0) - 32);
+      const check = (104 + values.reduce((sum, value, i) => sum + value * (i + 1), 0)) % 103;
+      bits = [104, ...values, check, 106].map((value) => CODE128_BITS[value]).join("");
+    } else {
+      const values = [148, ...[...text].map((ch) => CODE39_PATTERNS[CODE39_CHARS.indexOf(ch)]), 148];
+      bits = values.map((value) => [...value.toString(2).padStart(9, "0")].map((wide, i) => (i % 2 ? "0" : "1").repeat(wide === "1" ? 3 : 1)).join("")).join("0");
+    }
+    const scale = staff ? 1 : small ? 1.5 : 2.05;
+    const barHeight = staff ? 72 : small ? 42 : 62;
+    const quiet = 10;
+    const width = (bits.length + quiet * 2) * scale, height = barHeight + 8;
+    const number = (n) => String(Math.round(n * 1e3) / 1e3);
+    const bars = [...bits.matchAll(/1+/g)].map((match) => `<rect x="${number((quiet + match.index) * scale)}" y="4" width="${number(match[0].length * scale)}" height="${barHeight}" fill="#111"/>`).join("");
+    const format = staff ? "Code128" : "Code39";
+    return `<svg class="manabi-barcode${staff ? " manabi-staff-barcode" : ""}" role="img" aria-label="\u756A\u53F7 ${escapeHTML(text)} \u306E${format}\u30D0\u30FC\u30B3\u30FC\u30C9" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${height}" width="${number(width)}" height="${height}" preserveAspectRatio="xMidYMid meet"><rect x="0" y="0" width="${number(width)}" height="${height}" fill="#fff"/>${bars}</svg>`;
+  }
+  return __toCommonJS(barcode_exports);
+})();
+
+barcodeSVG=ManabiBarcode.barcodeSVG;
+
+// The legacy scanner still used a student's primary school after membership
+// became multi-classroom. Resolve a unique active student before changing view.
+(()=>{
+ const normalize=value=>String(value??'').normalize('NFKC').trim().toUpperCase()
+  .replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'')
+  .replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'')
+  .replace(/[‐‑‒–—−]/g,'-').trim();
+ const matches=value=>{const code=normalize(value);return code?db.students.filter(s=>normalize(s.code)===code&&activeStudent(s)):[];};
+ const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
+ const focusScanner=()=>{const input=document.getElementById('scan-student');if(input){input.value='';input.focus({preventScroll:true});}};
+ let inputTimer;
+ scanStudent=function(value){
+  clearTimeout(inputTimer);
+  if(!ready())return false;
+  const code=normalize(value),found=matches(value);
+  if(!code){toast('生徒番号をスキャン・入力してください。');return false;}
+  if(found.length!==1){toast(found.length?'同じ生徒番号が複数あります。マスター管理で確認してください。':'在籍生徒の番号が見つかりません：'+code);return false;}
+  const student=found[0],rooms=v12StudentRooms(student);
+  if(!rooms.length){toast('生徒の所属教室をマスター管理で確認してください。');return false;}
+  // Existing room switching saves visible drafts before loading another cohort.
+  captureVisibleEditors();
+  if(!rooms.includes(currentRoom()))switchRoom(rooms.includes(student.school)?student.school:rooms[0]);
+  if(extra.picker?.target==='desk')closePicker();
+  const already=extra.desk.seats.some(s=>s?.student===student.id);
+  addStudentToDesk(student.id);
+  toast(student.name+'さん'+(already?'の授業準備を開きました。':'を授業準備に追加しました。'));
+  queueMicrotask(focusScanner);
+  return true;
+ };
+ const dedicated=target=>target?.id==='scan-student';
+ const pickerCode=target=>target?.id==='picker-q'&&extra.picker?.target==='desk'&&matches(target.value).length>0;
+ // Capture avoids running the old inline Enter handler twice. It also supports
+ // scanners configured with Tab as the terminator without submitting other forms.
+ document.addEventListener('keydown',event=>{
+  if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
+  if(!dedicated(event.target)&&!pickerCode(event.target))return;
+  event.preventDefault();event.stopImmediatePropagation();scanStudent(event.target.value);
+ },true);
+ // Keyboard scanners without a terminator and pasted labels are accepted after
+ // the complete known code has stopped changing. Unknown input remains editable.
+ document.addEventListener('input',event=>{
+  if(!dedicated(event.target))return;
+  clearTimeout(inputTimer);
+  if(event.isComposing)return;
+  const input=event.target;
+  inputTimer=setTimeout(()=>{if(input.isConnected&&matches(input.value).length===1)scanStudent(input.value);},220);
+ },true);
+ // Scanning while no text field is selected works on the home/lesson screens.
+ // Never capture ordinary writing, passwords, composing text or keyboard shortcuts.
+ let burst='',lastKey=0;
+ document.addEventListener('keydown',event=>{
+  const target=event.target;
+  if(event.defaultPrevented||!ready()||event.isComposing||event.keyCode===229||event.ctrlKey||event.metaKey||event.altKey||target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')||document.querySelector('dialog[open]')){burst='';return;}
+  if(event.key==='Enter'||event.key==='Tab'){
+   const value=burst;burst='';
+   if(value.length>=3&&Date.now()-lastKey<250&&matches(value).length){event.preventDefault();scanStudent(value);}
+   return;
+  }
+  if(event.key.length!==1){if(event.key!=='Shift')burst='';return;}
+  const now=Date.now();if(now-lastKey>150)burst='';lastKey=now;
+  burst=(burst+event.key).slice(-100);
+ },true);
+})();
+
+/* Keep field names clear of DOM property names stripped by DOMPurify.
+   Posting remains limited to the existing manager/representative roles. */
+(()=>{
+ openBoard=function(id=''){
+  if(window.DebugContext?.locked)return;
+  if(!canManage()){toast('掲示板の投稿は教室長・代表が利用できます。');return;}
+  const note=db.announcements.find(item=>item.id===id);
+  modal(note?'掲示板の伝言を編集':'教室長からの伝言を投稿',`
+   <form data-manabi-board>
+    <div class="form-grid">
+     <label class="field">表示先<select name="board_room">${[currentRoom(),'両教室'].map(room=>option(room,room,note?.room||currentRoom())).join('')}</select></label>
+     <label class="field">重要度<select name="board_urgent">${option('通常','通常',note?.urgent?'重要':'通常')}${option('重要','重要',note?.urgent?'重要':'通常')}</select></label>
+    </div>
+    <label class="field mt">タイトル<input name="board_title" required maxlength="100" value="${esc(note?.title||'')}"></label>
+    <label class="field mt">伝言<textarea name="board_body" required rows="5">${esc(note?.body||'')}</textarea></label>
+    <div class="formfooter">
+     <button type="button" class="btn" data-board-close>戻る</button>
+     ${note?'<button type="button" class="btn danger" data-board-delete>削除</button>':''}
+     <button class="btn primary" type="submit">保存して掲示</button>
+    </div>
+   </form>`);
+  const form=document.querySelector('#modal form[data-manabi-board]');
+  form.onsubmit=event=>saveBoard(event,id);
+  form.querySelector('[data-board-close]').onclick=()=>closeModal();
+  const remove=form.querySelector('[data-board-delete]');
+  if(remove)remove.onclick=()=>removeBoard(id);
+ };
+ saveBoard=function(event,id){
+  event.preventDefault();
+  if(window.DebugContext?.locked)return;
+  if(!canManage())return;
+  const form=event.currentTarget||event.target;
+  if(!form.checkValidity()){form.reportValidity();return;}
+  const fields=new FormData(form),title=String(fields.get('board_title')||'').trim(),body=String(fields.get('board_body')||'').trim();
+  if(!title||!body){toast('タイトルと伝言を入力してください。');return;}
+  const old=db.announcements.find(item=>item.id===(form.dataset.boardId||id));
+  const note={...(old||{}),id:old?.id||uid('board'),room:fields.get('board_room'),urgent:fields.get('board_urgent')==='重要',title,body,author:state.actor,updatedAt:now(),createdAt:old?.createdAt||now()};
+  v3Audit('掲示板','','',old?'掲示板の伝言を変更':'掲示板に伝言を投稿',old||'新規',note);
+  if(old)db.announcements[db.announcements.indexOf(old)]=note;else db.announcements.push(note);
+  form.dataset.boardId=note.id;
+  persist();
+  if(!storageOK)return;
+  closeModal();render();toast('掲示板に反映しました。');
+ };
+})();
