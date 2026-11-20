@@ -2508,6 +2508,144 @@ v15RefreshTeacherHistory=function(){document.getElementById('v15-instructor-hist
 document.title='学びのスキルカルテ v17｜授業した生徒を授業欄へ自動表示';
 
 
+var ManabiScan = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // shared/scan.mjs
+  var scan_exports = {};
+  __export(scan_exports, {
+    codeKind: () => codeKind,
+    compactProduct: () => compactProduct,
+    createScanGate: () => createScanGate,
+    decodeASCII: () => decodeASCII,
+    isComposing: () => isComposing,
+    isStaffCredential: () => isStaffCredential,
+    isTerminator: () => isTerminator,
+    isbn13: () => isbn13,
+    looksLikeScan: () => looksLikeScan,
+    normalizeScan: () => normalizeScan,
+    resolveScan: () => resolveScan,
+    scanCandidates: () => scanCandidates,
+    staffCredential: () => staffCredential,
+    stripStudentPrefix: () => stripStudentPrefix,
+    validGTIN: () => validGTIN,
+    validISBN: () => validISBN
+  });
+  var normalizeScan = (value) => String(value ?? "").normalize("NFKC").trim().replace(/^\][A-Za-z][0-9]/, "").replace(/^\*([^*]+)\*$/, "$1").replace(/[‐‑‒–—−]/g, "-").trim().toUpperCase();
+  var isStaffCredential = (value) => /^(?:TL-[A-F0-9]{48}|91[0-9]{30})$/.test(normalizeScan(value));
+  function codeKind(value) {
+    const code = normalizeScan(value);
+    if (/^LLLD[:-](?:STUDENT[:-])?/.test(code) || /^D-\d+$/.test(code)) return "student";
+    if (/^MAT-/.test(code)) return "material";
+    if (/^TL-/.test(code) || /^91[0-9]{30}$/.test(code)) return "credential";
+    return null;
+  }
+  var stripStudentPrefix = (value) => normalizeScan(value).replace(/^LLLD[:-]STUDENT[:-]/, "").replace(/^LLLD[:-]/, "");
+  var compactProduct = (value) => normalizeScan(value).replace(/^(?:ISBN(?:-1[03])?|JAN)\s*:?\s*/, "").replace(/[ -]/g, "");
+  function validGTIN(value) {
+    const code = String(value);
+    if (!/^(?:\d{8}|\d{13})$/.test(code)) return false;
+    let sum = 0;
+    for (let i = code.length - 2, weight = 3; i >= 0; i--, weight = 4 - weight) sum += Number(code[i]) * weight;
+    return (10 - sum % 10) % 10 === Number(code.at(-1));
+  }
+  function validISBN(value) {
+    const code = compactProduct(value);
+    if (/^97[89]\d{10}$/.test(code)) return validGTIN(code);
+    if (!/^\d{9}[0-9X]$/.test(code)) return false;
+    return [...code].reduce((sum, c, i) => sum + (c === "X" ? 10 : Number(c)) * (10 - i), 0) % 11 === 0;
+  }
+  function isbn13(value) {
+    const code = compactProduct(value);
+    if (!validISBN(code)) return "";
+    if (code.length === 13) return code;
+    const body = "978" + code.slice(0, 9), sum = [...body].reduce((n, c, i) => n + Number(c) * (i % 2 ? 3 : 1), 0);
+    return body + (10 - sum % 10) % 10;
+  }
+  function decodeASCII(value, { credential = false } = {}) {
+    const code = normalizeScan(value);
+    if (!/^\d{6,600}$/.test(code) || code.length % 3 || validGTIN(code) || validISBN(code)) return "";
+    const numbers = code.match(/.../g).map(Number);
+    if (numbers.some((n) => n < 32 || n > 126)) return "";
+    const decoded = normalizeScan(String.fromCharCode(...numbers));
+    if (credential && isStaffCredential(decoded)) return decoded;
+    return /^[A-Z0-9][A-Z0-9._:/-]{1,199}$/.test(decoded) && /[A-Z]/.test(decoded) ? decoded : "";
+  }
+  function scanCandidates(value, { kind } = {}) {
+    const raw = normalizeScan(value), decoded = decodeASCII(raw, { credential: kind === "credential" });
+    return [...new Set([raw, decoded].filter(Boolean))];
+  }
+  function staffCredential(value) {
+    const raw = normalizeScan(value);
+    if (isStaffCredential(raw)) return raw;
+    const decoded = decodeASCII(raw, { credential: true });
+    return isStaffCredential(decoded) ? decoded : "";
+  }
+  var defaultKeys = { student: ["code", "id"], teacher: ["id", "login_id", "loginId"], material: ["barcode", "id", "isbn", "jan"] };
+  function aliases(item, kind, keys) {
+    return [...new Set(keys.flatMap((key) => {
+      const value = item?.[key];
+      if (value === void 0 || value === null) return [];
+      const code = kind === "student" ? stripStudentPrefix(value) : normalizeScan(value);
+      if (key === "isbn") return [code, compactProduct(code), isbn13(code)].filter(Boolean);
+      if (key === "jan") return [code, compactProduct(code)];
+      return [code];
+    }))];
+  }
+  function resolveScan(value, { kind, items = [], keys = defaultKeys[kind] || ["id"] } = {}) {
+    const raw = normalizeScan(value);
+    if (!raw) return { status: "empty", matches: [], raw, code: raw };
+    for (const [index, candidate] of scanCandidates(raw, { kind }).entries()) {
+      const declared = codeKind(candidate);
+      if (declared && declared !== kind) return { status: "wrong_kind", matches: [], raw, code: candidate };
+      const code2 = kind === "student" ? stripStudentPrefix(candidate) : candidate;
+      let matches = items.filter((item) => keys.some((key) => (kind === "student" ? stripStudentPrefix(item?.[key]) : normalizeScan(item?.[key])) === code2));
+      if (!matches.length && kind === "material") {
+        const product = compactProduct(code2);
+        if (validGTIN(product) || validISBN(product)) matches = items.filter((item) => aliases(item, kind, keys).some((v) => v === product || validISBN(product) && v === isbn13(product)));
+      }
+      if (matches.length) return { status: matches.length === 1 ? "found" : "ambiguous", matches, raw, code: code2, source: index ? "ascii" : "direct" };
+    }
+    const code = scanCandidates(raw, { kind }).at(-1) || raw;
+    return { status: "not_found", matches: [], raw, code };
+  }
+  function looksLikeScan(value, kind) {
+    const code = normalizeScan(value);
+    return !!codeKind(code) || !!decodeASCII(code, { credential: kind === "credential" }) || /^\d{3,}$/.test(code) || kind === "material" && /^(?:ISBN|JAN)\b/.test(code);
+  }
+  var isComposing = (event) => !!(event.isComposing || event.keyCode === 229);
+  var isTerminator = (event) => !isComposing(event) && !event.ctrlKey && !event.metaKey && !event.altKey && ["Enter", "Tab"].includes(event.key);
+  function createScanGate({ now = () => Date.now(), windowMs = 650 } = {}) {
+    const states = /* @__PURE__ */ new WeakMap();
+    return { accept(target, value) {
+      const code = normalizeScan(value), previous = states.get(target), time = now();
+      if (previous?.code === code && time - previous.time < windowMs) return false;
+      states.set(target, { code, time });
+      return true;
+    }, clear(target) {
+      states.delete(target);
+    } };
+  }
+  return __toCommonJS(scan_exports);
+})();
+
+
 var ManabiBarcode = (() => {
   var __defProp = Object.defineProperty;
   var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -2532,6 +2670,32 @@ var ManabiBarcode = (() => {
   __export(barcode_exports, {
     barcodeSVG: () => barcodeSVG
   });
+
+  // shared/scan.mjs
+  var normalizeScan = (value) => String(value ?? "").normalize("NFKC").trim().replace(/^\][A-Za-z][0-9]/, "").replace(/^\*([^*]+)\*$/, "$1").replace(/[‐‑‒–—−]/g, "-").trim().toUpperCase();
+  var compactProduct = (value) => normalizeScan(value).replace(/^(?:ISBN(?:-1[03])?|JAN)\s*:?\s*/, "").replace(/[ -]/g, "");
+  function validGTIN(value) {
+    const code = String(value);
+    if (!/^(?:\d{8}|\d{13})$/.test(code)) return false;
+    let sum = 0;
+    for (let i = code.length - 2, weight = 3; i >= 0; i--, weight = 4 - weight) sum += Number(code[i]) * weight;
+    return (10 - sum % 10) % 10 === Number(code.at(-1));
+  }
+  function validISBN(value) {
+    const code = compactProduct(value);
+    if (/^97[89]\d{10}$/.test(code)) return validGTIN(code);
+    if (!/^\d{9}[0-9X]$/.test(code)) return false;
+    return [...code].reduce((sum, c, i) => sum + (c === "X" ? 10 : Number(c)) * (10 - i), 0) % 11 === 0;
+  }
+  function isbn13(value) {
+    const code = compactProduct(value);
+    if (!validISBN(code)) return "";
+    if (code.length === 13) return code;
+    const body = "978" + code.slice(0, 9), sum = [...body].reduce((n, c, i) => n + Number(c) * (i % 2 ? 3 : 1), 0);
+    return body + (10 - sum % 10) % 10;
+  }
+
+  // shared/barcode.mjs
   var CODE39_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%";
   var CODE39_PATTERNS = [
     52,
@@ -2619,16 +2783,30 @@ var ManabiBarcode = (() => {
 10111101110 11101011110 11110101110 11010000100 11010010000
 11010011100 1100011101011`.split(/\s+/);
   var escapeHTML = (value) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
-  function barcodeSVG(code, small = false) {
-    const text = String(code ?? "").trim().toUpperCase();
+  function barcodeSVG(code, small = false, options = {}) {
+    let text = String(code ?? "").trim().toUpperCase();
+    const requested = options.format;
+    if (requested === "ISBN") text = isbn13(text);
+    if (["JAN", "EAN13", "EAN8"].includes(requested)) text = compactProduct(text);
+    const ean = ["ISBN", "JAN", "EAN13", "EAN8"].includes(requested);
     const compactStaff = /^91[0-9]{30}$/.test(text);
     const staff = compactStaff || /^TL-[A-F0-9]{48}$/.test(text);
     const material = /^MAT-[0-9]{6,9}$/.test(text);
-    if (!text || !staff && [...text].some((ch) => !CODE39_CHARS.includes(ch))) {
+    const extended = !requested && !ean && /^[A-Z0-9._-]+$/.test(text) && [...text].some((ch) => !CODE39_CHARS.includes(ch));
+    const code128 = staff || requested === "Code128" || extended;
+    if (!text || code128 && /[^\x20-\x7e]/.test(text) || ean && (!validGTIN(text) || requested === "EAN13" && text.length !== 13 || requested === "EAN8" && text.length !== 8) || !code128 && [...text].some((ch) => !CODE39_CHARS.includes(ch))) {
       return '<span class="small" style="color:#a33">\u756A\u53F7\u306B\u30D0\u30FC\u30B3\u30FC\u30C9\u975E\u5BFE\u5FDC\u6587\u5B57\u304C\u3042\u308A\u307E\u3059</span>';
     }
     let bits;
-    if (staff || material) {
+    if (ean) {
+      const left = ["0001101", "0011001", "0010011", "0111101", "0100011", "0110001", "0101111", "0111011", "0110111", "0001011"];
+      const right = left.map((x) => x.replace(/[01]/g, (b) => b === "0" ? "1" : "0")), even = right.map((x) => [...x].reverse().join(""));
+      if (text.length === 8) bits = "101" + [...text.slice(0, 4)].map((x) => left[+x]).join("") + "01010" + [...text.slice(4)].map((x) => right[+x]).join("") + "101";
+      else {
+        const parity = ["LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG", "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL"][+text[0]];
+        bits = "101" + [...text.slice(1, 7)].map((x, i) => (parity[i] === "L" ? left : even)[+x]).join("") + "01010" + [...text.slice(7)].map((x) => right[+x]).join("") + "101";
+      }
+    } else if (code128) {
       const start = compactStaff ? 105 : 104;
       const values = compactStaff ? text.match(/../g).map(Number) : [...text].map((ch) => ch.charCodeAt(0) - 32);
       const check = (start + values.reduce((sum, value, i) => sum + value * (i + 1), 0)) % 103;
@@ -2637,13 +2815,13 @@ var ManabiBarcode = (() => {
       const values = [148, ...[...text].map((ch) => CODE39_PATTERNS[CODE39_CHARS.indexOf(ch)]), 148];
       bits = values.map((value) => [...value.toString(2).padStart(9, "0")].map((wide, i) => (i % 2 ? "0" : "1").repeat(wide === "1" ? 3 : 1)).join("")).join("0");
     }
-    const scale = staff || material ? 1 : small ? 1.5 : 2.05;
+    const scale = code128 || ean ? 1 : small ? 1.5 : 2.05;
     const barHeight = material ? 24 : compactStaff ? 42 : staff ? 72 : small ? 42 : 62;
-    const quiet = 10;
+    const quiet = ean ? 11 : 10;
     const width = (bits.length + quiet * 2) * scale, height = barHeight + 8;
     const number = (n) => String(Math.round(n * 1e3) / 1e3);
     const bars = [...bits.matchAll(/1+/g)].map((match) => `<rect x="${number((quiet + match.index) * scale)}" y="4" width="${number(match[0].length * scale)}" height="${barHeight}" fill="#111"/>`).join("");
-    const format = staff || material ? "Code128" : "Code39";
+    const format = ean ? "EAN" + text.length : code128 ? "Code128" : "Code39";
     return `<svg class="manabi-barcode${compactStaff ? " manabi-compact-staff-barcode" : staff ? " manabi-staff-barcode" : ""}" role="img" aria-label="\u756A\u53F7 ${escapeHTML(text)} \u306E${format}\u30D0\u30FC\u30B3\u30FC\u30C9" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${height}" width="${number(width)}" height="${height}" preserveAspectRatio="xMidYMid meet"><rect x="0" y="0" width="${number(width)}" height="${height}" fill="#fff"/>${bars}</svg>`;
   }
   return __toCommonJS(barcode_exports);
@@ -2654,14 +2832,13 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
 // The legacy scanner still used a student's primary school after membership
 // became multi-classroom. Resolve a unique active student before changing view.
 (()=>{
- const normalize=value=>String(value??'').normalize('NFKC').trim().toUpperCase()
-  .replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'')
-  .replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'')
-  .replace(/[‐‑‒–—−]/g,'-').trim();
- const wrongKind=value=>/^(?:MAT-|TL-)/.test(normalize(value))||/^91[0-9]{30}$/.test(normalize(value));
- const matches=value=>{const code=normalize(value);return code&&!wrongKind(code)?db.students.filter(s=>normalize(s.code)===code&&activeStudent(s)):[];};
+ const normalize=ManabiScan.stripStudentPrefix;
+ const resolve=value=>ManabiScan.resolveScan(value,{kind:'student',items:db.students});
+ const wrongKind=value=>resolve(value).status==='wrong_kind';
+ const matches=value=>{const r=resolve(value);return r.status==='ambiguous'?r.matches:r.matches.filter(activeStudent);};
  const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
  const focusScanner=()=>{const input=document.getElementById('scan-student');if(input){input.value='';input.focus({preventScroll:true});}};
+ const scanGate=ManabiScan.createScanGate(),gateTarget={};
  let inputTimer;
  scanStudent=function(value){
   clearTimeout(inputTimer);
@@ -2670,6 +2847,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   if(wrongKind(code)){toast('生徒用のバーコードを読み取ってください。講師・教材のコードは使えません。');return false;}
   if(!code){toast('生徒番号をスキャン・入力してください。');return false;}
   if(found.length!==1){toast(found.length?'同じ生徒番号が複数あります。マスター管理で確認してください。':'在籍生徒の番号が見つかりません：'+code);return false;}
+  if(!scanGate.accept(gateTarget,found[0].id))return true;
   const student=found[0],rooms=v12StudentRooms(student);
   if(!rooms.length){toast('生徒の所属教室をマスター管理で確認してください。');return false;}
   // Existing room switching saves visible drafts before loading another cohort.
@@ -2689,7 +2867,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  document.addEventListener('keydown',event=>{
   if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
   if(!dedicated(event.target)&&!pickerCode(event.target))return;
-  event.preventDefault();event.stopImmediatePropagation();if(pickerCode(event.target)&&window.ManabiStudentSelect)ManabiStudentSelect.scanPicker(event.target.value);else scanStudent(event.target.value);
+  event.preventDefault();event.stopImmediatePropagation();if(!event.target.value.trim())return;if(pickerCode(event.target)&&window.ManabiStudentSelect)ManabiStudentSelect.scanPicker(event.target.value);else scanStudent(event.target.value);
  },true);
  // Keyboard scanners without a terminator and pasted labels are accepted after
  // the complete known code has stopped changing. Unknown input remains editable.
@@ -2724,10 +2902,12 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
 /* Barcode input follows the current student-selection context. Free-text lesson
    notes, credentials and the student registration form are deliberately excluded. */
 (()=>{
- const normalize=value=>String(value??'').normalize('NFKC').trim().toUpperCase().replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'').replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'').replace(/[‐‑‒–—−]/g,'-').trim();
+ const normalize=ManabiScan.stripStudentPrefix;
+ const resolve=value=>ManabiScan.resolveScan(value,{kind:'student',items:db.students});
+ const scanGate=ManabiScan.createScanGate();
  const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
- const wrongKind=value=>/^(?:MAT-|TL-)/.test(normalize(value))||/^91[0-9]{30}$/.test(normalize(value));
- const byCode=value=>wrongKind(value)?[]:db.students.filter(s=>normalize(s.code)===normalize(value)&&normalize(value));
+ const wrongKind=value=>resolve(value).status==='wrong_kind';
+ const byCode=value=>resolve(value).matches;
  const known=value=>byCode(value).length>0;
  const lookup=(value,names=false,announce=false,eligible=activeStudent)=>{
   if(wrongKind(value)){if(announce)toast('生徒用のバーコードを読み取ってください。講師・教材のコードは使えません。');return null;}
@@ -2833,6 +3013,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   const kind=context(input);if(!kind||!ready())return false;
   const allowName=kind==='select'||kind==='intake',student=lookup(input.value,allowName,explicit,eligibleFor(kind,input));
   if(!student)return false;
+  if(!scanGate.accept(input,student.id))return true;
   if(kind==='picker')return scanPicker(input.value);
   if(kind==='select')return chooseNative(input,student);
   if(kind==='intake')return chooseIntake(input,student);
@@ -2850,6 +3031,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  }
  document.addEventListener('input',event=>{
   const input=event.target,kind=context(input);if(!kind||event.isComposing)return;
+  if(ManabiScan.looksLikeScan(input.value,'student')||known(input.value))event.stopImmediatePropagation();
   clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(input.isConnected&&(wrongKind(input.value)||known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false,eligibleFor(context(input),input)))))applyInput(input,true);},220);
  },true);
  document.addEventListener('compositionend',event=>{
@@ -2860,7 +3042,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
   const input=event.target,kind=context(input);if(!kind)return;
   // Preserve ordinary text search and tab navigation unless an exact student is ready.
-  const selected=wrongKind(input.value)||known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false));
+  const selected=ManabiScan.looksLikeScan(input.value,'student')||wrongKind(input.value)||known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false));
   if(!selected&&(event.key==='Tab'||!input.value.trim()||kind!=='select'&&kind!=='intake'))return;
   event.preventDefault();event.stopImmediatePropagation();clearTimeout(inputTimer);applyInput(input,true);
  },true);
@@ -2984,13 +3166,13 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  const previousMaterialRow=renderMaterialRow;renderMaterialRow=function(...args){return hint(previousMaterialRow(...args));};
  const previousHomeworkRow=renderHWRow;renderHWRow=function(...args){return hint(previousHomeworkRow(...args));};
  const previousNextRow=v7NextRow;v7NextRow=function(...args){return hint(previousNextRow(...args));};
- const normalize=value=>String(value??'').normalize('NFKC').trim().toUpperCase().replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'').replace(/[‐‑‒–—−]/g,'-').trim();
- const studentCode=value=>normalize(value).replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'');
+ const normalize=ManabiScan.normalizeScan;
+ const resolve=value=>ManabiScan.resolveScan(value,{kind:'material',items:db.catalog||[]});
  const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
- const materialCode=value=>/^MAT-[0-9]{6,9}$/.test(normalize(value));
- const otherCode=value=>{const code=normalize(value);return /^LLLD[:-]/.test(code)||/^TL-/.test(code)||/^91[0-9]{30}$/.test(code)||/^D-[0-9]+$/.test(studentCode(code))||(db.students||[]).some(student=>studentCode(student.code)===studentCode(code));};
- const prefixOnly=value=>{const raw=String(value??'').normalize('NFKC').trim().toUpperCase(),code=normalize(value);return /^\](?:[A-Z](?:[0-9])?)?$/.test(raw)||raw==='*'||/^\][A-Z][0-9]\*?$/.test(raw)||['LLLD:STUDENT:','LLLD-STUDENT-','LLLD:','LLLD-'].some(prefix=>code&&prefix.startsWith(code))||/^M(?:A(?:T(?:-[0-9]*)?)?)?$/.test(code)||/^T(?:L(?:-[A-Z0-9]*)?)?$/.test(code)||/^9(?:1[0-9]*)?$/.test(code)||(code&&(db.students||[]).some(student=>normalize(student.code).startsWith(code)));};
- const barcodeLike=value=>/^MAT-/.test(normalize(value))||otherCode(value);
+ const materialCode=value=>resolve(value).matches.length>0||ManabiScan.looksLikeScan(value,'material');
+ const otherCode=value=>resolve(value).status==='wrong_kind';
+ const prefixOnly=value=>{const code=normalize(value).replace(/^\*/,'');return /^\]?(?:[A-Z][0-9]?)?$/.test(code)||code==='*'||/^\d+$/.test(code)||['MAT-','TL-','LLLD:STUDENT:','LLLD-STUDENT-'].some(p=>p.startsWith(code)||code.startsWith(p))||(db.catalog||[]).some(b=>[b.barcode,b.id,b.isbn,b.jan].some(v=>v&&normalize(v).startsWith(code)));};
+ const barcodeLike=value=>resolve(value).matches.length>0||ManabiScan.looksLikeScan(value,'material');
  const locate=input=>{
   if(!input?.matches?.(selector)||input.disabled||input.readOnly)return null;
   const form=input.closest('form[data-editor]');if(!form)return null;
@@ -3022,11 +3204,12 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  function apply(input,moveFocus=false){
   const place=locate(input);if(!place||!ready()||!barcodeLike(input.value))return false;
   clearTimeout(inputTimer);
-  const code=normalize(input.value),draft=getEditor(place.token),previous=draft?.[place.key]?.[place.index];
+  const resolution=resolve(input.value),code=resolution.code,draft=getEditor(place.token),previous=draft?.[place.key]?.[place.index];
   if(!previous)return false;
-  let message='';const found=(db.catalog||[]).filter(book=>normalize(book.barcode)===code);
+  let message='';const found=resolution.matches;
   if(otherCode(code))message='ここは教材名の入力欄です。教材用のバーコードを読み取ってください。';
-  else if(!materialCode(code))message='教材バーコードの形式を確認してください。';
+
+  else if(/^MAT-/.test(code)&&!/^MAT-[0-9]{6,9}$/.test(code))message='教材バーコードの形式を確認してください。';
   else if(found.length!==1)message=found.length?'同じ教材コードが複数あります。教室長へ確認してください。':'教材バーコードが見つかりません。教材マスターを確認してください。';
   else if(found[0].active===false)message='この教材は現行マスターから除外されています。別の教材を選択してください。';
   if(message){const saved=baseline.get(input);if(saved){previous.name=saved.name;previous.catalogId=saved.catalogId;if(saved.sourcePages!==undefined)previous.sourcePages=saved.sourcePages;}input.value=previous.name||'';captureEntry(place.token);const restored=getEditor(place.token)?.[place.key]?.[place.index];if(restored&&saved)restored.catalogId=saved.catalogId;persist();input.setAttribute('aria-invalid','true');toast(message);input.focus({preventScroll:true});input.select();return true;}
@@ -3057,4 +3240,10 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  document.addEventListener('focusout',event=>{if(locate(event.target))resolved.delete(event.target);});
  document.addEventListener('focusin',event=>{const input=event.target;if(!locate(input))return;remember(input);input.placeholder='選択・手入力・教材バーコード';input.autocomplete='off';input.select();});
  window.ManabiMaterialScan={apply,normalize};
+ // The existing book picker uses the same master resolver and chooseBook path.
+ const picker=input=>input?.matches?.('.book-filters input[type="search"]')&&extra.bookPicker;
+ let pickerTimer;
+ function chooseScannedBook(input){if(!picker(input)||!ready())return;const r=resolve(input.value);if(r.status==='found'&&r.matches[0].active!==false){chooseBook(r.matches[0].id);return;}toast(r.status==='ambiguous'?'同じ教材コードが複数あります。教材マスターを確認してください。':r.status==='wrong_kind'?'教材用のコードを読み取ってください。':'教材が見つかりません。教材マスターを確認してください。');input.focus();input.select();}
+ document.addEventListener('input',event=>{const input=event.target;if(!picker(input)||event.isComposing)return;clearTimeout(pickerTimer);pickerTimer=setTimeout(()=>{if(input.isConnected&&resolve(input.value).matches.length)chooseScannedBook(input);},220);},true);
+ document.addEventListener('keydown',event=>{const input=event.target;if(!picker(input)||!ManabiScan.isTerminator(event)||!barcodeLike(input.value))return;event.preventDefault();event.stopImmediatePropagation();clearTimeout(pickerTimer);chooseScannedBook(input);},true);
 })();
