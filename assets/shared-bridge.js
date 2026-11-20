@@ -390,15 +390,37 @@ var ManabiMaterialsCSV = (() => {
  function setDirectory(rows){if(!Array.isArray(rows))return;directory=rows.map(x=>({teacher_id:x.teacher_id,login_id:x.login_id||''}));loadedAt=Date.now();}
  async function load(){if(loading||!ready()||!window.ManabiAuth||Date.now()-loadedAt<30000)return loading;loading=(async()=>{try{setDirectory(await ManabiAuth.api('staff/directory'));}catch{}finally{loading=null;}})();return loading;}
  const native=node=>node.tagName==='SELECT'&&(node.name==='teacher'||node.matches('[data-entry-field="teacher"]')||/^(?:setDaily\('teacher',this.value\)|setDeskMeta\('teacher',this.value\)|v14SetAttendanceFilter\('teacher',this.value\)|v15SetTeacherHistory\('teacher',this.value\)|v13Attendance\.teacher=this.value;render\(\))$/.test(node.getAttribute('onchange')||''));
- function apply(input){if(!ready())return false;const result=resolve(input.value);if(result.status!=='found'){toast(result.status==='ambiguous'?'同じ講師IDが複数あります。講師マスターを確認してください。':result.status==='wrong_kind'?'講師IDを読み取ってください。ログインカードはアプリの入口で使います。':'講師IDが見つかりません。講師マスターを確認してください。');return false;}const teacher=result.matches[0],select=links.get(input);if(select){const options=[...select.options],byID=options.find(x=>x.value===teacher.id),byName=options.filter(x=>x.value===teacher.name),sameName=items().filter(t=>t.name===teacher.name),option=byID||(byName.length===1&&sameName.length===1?byName[0]:null);if(!option){toast('この画面で選択できる講師ではありません。');return false;}if(!gate.accept(input,result.code))return true;select.value=option.value;select.dispatchEvent(new Event('change',{bubbles:true}));if(input.isConnected){input.value=teacher.name;input.select();}toast(teacher.name+'を選択しました。');return true;}return false;}
- function mount(){if(!ready())return;void load();for(const select of document.querySelectorAll('#content select,#modal select')){if(!native(select)||select.disabled||mounted.has(select))continue;mounted.add(select);const input=document.createElement('input');input.type='search';input.placeholder='講師ID・バーコード';input.autocomplete='off';input.dataset.manabiTeacherSearch='';input.setAttribute('aria-label','講師をID・バーコードで検索');links.set(input,select);select.before(input);let timer;input.addEventListener('input',e=>{clearTimeout(timer);if(e.isComposing)return;timer=setTimeout(()=>{if(input.isConnected&&resolve(input.value).status==='found')apply(input);},220);});input.addEventListener('compositionend',()=>{clearTimeout(timer);timer=setTimeout(()=>{if(input.isConnected&&resolve(input.value).status==='found')apply(input);},220);});input.addEventListener('keydown',e=>{if(!ManabiScan.isTerminator(e)||!input.value.trim())return;e.preventDefault();e.stopImmediatePropagation();clearTimeout(timer);apply(input);});}}
+ const contextTarget={};let lookupSequence=0;
+ function selectTeacher(teacher,input){
+  if(!ready()||teacher.active===false){toast('利用中の講師を選択してください。');return false;}
+  if(state.page==='daily'&&window.ManabiAttendance){ManabiAttendance.showTeacher(teacher.id);return true;}
+  const select=links.get(input);if(!select)return false;
+  const options=[...select.options],byID=options.find(x=>x.value===teacher.id),byName=options.filter(x=>x.value===teacher.name),sameName=items().filter(t=>t.name===teacher.name),option=byID||(byName.length===1&&sameName.length===1?byName[0]:null);
+  if(!option){toast('この画面で選択できる講師ではありません。');return false;}
+  select.value=option.value;select.dispatchEvent(new Event('change',{bubbles:true}));
+  const next=input?.isConnected?input:document.querySelector('#content [data-manabi-teacher-search]');if(next){next.value='';next.focus({preventScroll:true});}
+  toast(teacher.name+'を選択しました。');return true;
+ }
+ function applyValue(value,input){
+  if(!ready())return false;const credential=ManabiScan.staffCredential(value),result=credential?null:resolve(value);
+  if(input){input.value='';input.focus({preventScroll:true});}
+  if(!gate.accept(input||contextTarget,value))return true;const seq=++lookupSequence;
+  if(credential){
+   if(!window.ManabiAuth)return false;const page=state.page;
+   return ManabiAuth.api('staff/lookup-card','POST',{barcode:credential}).then(out=>{if(seq!==lookupSequence||state.page!==page||!ready())return false;const teacher=items().find(t=>t.id===out.teacher_id);if(!teacher){toast('講師が見つかりません。');return false;}return selectTeacher(teacher,input);}).catch(()=>{if(seq===lookupSequence)toast('講師カードを確認できませんでした。登録状態・通信を確認してください。');return false;});
+  }
+  if(result.status!=='found'){toast(result.status==='ambiguous'?'同じ講師IDが複数あります。講師マスターを確認してください。':result.status==='wrong_kind'?'講師ID・バーコードを読み取ってください。':'講師IDが見つかりません。講師マスターを確認してください。');return false;}
+  return selectTeacher(result.matches[0],input);
+ }
+ const apply=input=>applyValue(input.value,input);
+ function mount(){if(!ready())return;void load();for(const select of document.querySelectorAll('#content select,#modal select')){if(!native(select)||select.disabled||mounted.has(select))continue;mounted.add(select);const input=document.createElement('input');input.type='search';input.placeholder='講師ID・バーコード';input.autocomplete='off';input.dataset.manabiTeacherSearch='';input.setAttribute('aria-label','講師をID・バーコードで検索');links.set(input,select);select.before(input);let timer;input.addEventListener('input',e=>{clearTimeout(timer);if(e.isComposing)return;timer=setTimeout(()=>{if(input.isConnected&&(resolve(input.value).status==='found'||ManabiScan.staffCredential(input.value)))apply(input);},220);});input.addEventListener('compositionend',()=>{clearTimeout(timer);timer=setTimeout(()=>{if(input.isConnected&&(resolve(input.value).status==='found'||ManabiScan.staffCredential(input.value)))apply(input);},220);});input.addEventListener('keydown',e=>{if(!ManabiScan.isTerminator(e)||!input.value.trim())return;e.preventDefault();e.stopImmediatePropagation();clearTimeout(timer);apply(input);});}}
  const previous=render;render=function(...args){const result=previous(...args);mount();return result;};
  const oldHistory=v15RefreshTeacherHistory;v15RefreshTeacherHistory=function(...args){const result=oldHistory(...args);mount();return result;};
  const oldModal=modal;modal=function(...args){const result=oldModal(...args);mount();return result;};
  const previousSnapshot=v8FormSnapshot;v8FormSnapshot=function(form){const controls=[...form.querySelectorAll('input,select,textarea')].filter(n=>n.type!=='file'&&n.type!=='password'&&!n.matches('[data-manabi-student-search]'));return previousSnapshot(form).filter(field=>!controls[field.i]?.matches('[data-manabi-teacher-search]')).map((field,i)=>({...field,i}));};
  const previousMaster=masterTeachers;masterTeachers=function(){const q=extra.masterQ,r=resolve(q);if(!q||!r.matches.length)return previousMaster();const filtered=r.matches;extra.masterQ='';const html=previousMaster();extra.masterQ=q;const holder=document.createElement('div');holder.innerHTML=html;for(const row of holder.querySelectorAll('tbody tr')){const button=row.querySelector('[onclick^="openTeacherForm("]'),id=button?.getAttribute('onclick')?.match(/openTeacherForm\('([^']+)'\)/)?.[1];if(id&&!filtered.some(t=>t.id===id))row.remove();}const count=holder.querySelector('.master-toolbar b');if(count)count.textContent='講師マスター '+holder.querySelectorAll('tbody tr').length+'名';const search=holder.querySelector('input[type="search"]');if(search)search.setAttribute('value',q);return holder.innerHTML;};
  document.addEventListener('keydown',event=>{const input=event.target;if(!ManabiScan.isTerminator(event)||state.page!=='master'||extra.masterTab!=='teachers'||!input.matches?.('input[type="search"]'))return;if(resolve(input.value).matches.length||ManabiScan.looksLikeScan(input.value,'teacher')){event.preventDefault();event.stopImmediatePropagation();const r=resolve(input.value);if(r.status==='found'){extra.masterQ=r.matches[0].login_id||r.matches[0].id;render();}else toast(r.status==='ambiguous'?'同じ講師IDが複数あります。':'講師IDが見つかりません。');}},true);
- window.ManabiTeacherScan={resolve,mount,setDirectory};mount();
+ window.ManabiTeacherScan={resolve,mount,setDirectory,scanInContext:value=>state.page==='daily'?applyValue(value,null):false};mount();
 })();
 
 /*! pdf-lib/LICENSE.md

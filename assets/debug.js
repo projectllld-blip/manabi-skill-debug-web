@@ -151,3 +151,14 @@
  arrange();
  window.ManabiProductionUI={arrange};
 })();
+
+// Remove the development box without removing backups or support operations.
+(()=>{
+ const bar=document.querySelector('.debug-bar');if(!bar)return;
+ const buttons=[...bar.querySelectorAll('button')],status=bar.querySelector('.shared-sync-status'),recover=buttons.find(b=>b.textContent==='未送信の入力を確認');
+ const top=document.querySelector('.topbar');if(status&&top)top.append(status);if(recover&&top)top.append(recover);
+ const support=buttons.filter(b=>b!==recover&&!['バックアップ・復元','ログアウト','講師を切り替える'].includes(b.textContent));
+ bar.remove();
+ function mount(){if(state.page!=='settings'||document.querySelector('.workflow-tools'))return;const box=document.createElement('section');box.className='card mt workflow-tools';const h=document.createElement('h2');h.textContent='サポート';box.append(h);const row=document.createElement('div');row.className='row mt';row.append(...support);box.append(row);document.getElementById('content').append(box);}
+ const previous=render;render=function(...args){const result=previous(...args);mount();return result;};mount();
+})();

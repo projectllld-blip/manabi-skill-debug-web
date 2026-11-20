@@ -39,3 +39,10 @@ dialog[open] .v9-missing-notice:not(.complete){display:block!important}
 
 .staff-cards-preview .staff-card-page{width:184mm;min-height:269mm}
 @media print{#print-root .scan-label-page{height:auto!important;min-height:0!important;max-height:none!important;padding:0!important;margin:0!important;break-after:page;page-break-after:always}#print-root .scan-label-page:last-child{break-after:auto;page-break-after:auto}}
+
+.topbar>.shared-sync-status{font-size:11px;flex-basis:100%;text-align:right;color:var(--muted,#64746c)}
+.report-student-top{margin-bottom:14px}.report-student-top .registered-tags{margin:10px 0}
+.attendance-link{font:inherit;text-decoration:underline;text-underline-offset:3px;padding:5px 8px;min-height:36px;white-space:nowrap}
+.attendance-lesson{padding:16px 0;border-top:1px solid #dbe3df}.attendance-lesson:first-of-type{margin-top:16px}.attendance-lesson dd{margin:4px 0 12px;overflow-wrap:anywhere}.attendance-lesson dt{font-size:12px;font-weight:700;color:#52645d}.attendance-lesson .preline{white-space:pre-wrap}
+@media(max-width:750px){.v14-attend-table .attendance-link{display:block}.report-student-top .registered-tags{display:flex;flex-wrap:wrap;gap:6px}}
+@media print{.shared-sync-status,.workflow-tools{display:none!important}}

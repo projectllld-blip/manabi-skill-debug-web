@@ -2847,7 +2847,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   if(wrongKind(code)){toast('生徒用のバーコードを読み取ってください。講師・教材のコードは使えません。');return false;}
   if(!code){toast('生徒番号をスキャン・入力してください。');return false;}
   if(found.length!==1){toast(found.length?'同じ生徒番号が複数あります。マスター管理で確認してください。':'在籍生徒の番号が見つかりません：'+code);return false;}
-  if(!scanGate.accept(gateTarget,found[0].id))return true;
+  if(!scanGate.accept(gateTarget,found[0].id)){queueMicrotask(focusScanner);return true;}
   const student=found[0],rooms=v12StudentRooms(student);
   if(!rooms.length){toast('生徒の所属教室をマスター管理で確認してください。');return false;}
   // Existing room switching saves visible drafts before loading another cohort.
@@ -2867,7 +2867,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  document.addEventListener('keydown',event=>{
   if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
   if(!dedicated(event.target)&&!pickerCode(event.target))return;
-  event.preventDefault();event.stopImmediatePropagation();if(!event.target.value.trim())return;if(pickerCode(event.target)&&window.ManabiStudentSelect)ManabiStudentSelect.scanPicker(event.target.value);else scanStudent(event.target.value);
+  event.preventDefault();event.stopImmediatePropagation();if(!event.target.value.trim())return;if(pickerCode(event.target)&&window.ManabiStudentSelect)ManabiStudentSelect.scanPicker(event.target.value);else if(!scanStudent(event.target.value))event.target.select();
  },true);
  // Keyboard scanners without a terminator and pasted labels are accepted after
  // the complete known code has stopped changing. Unknown input remains editable.
@@ -2886,6 +2886,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  // Never capture ordinary writing, passwords, composing text or keyboard shortcuts.
  let burst='',lastKey=0;
  document.addEventListener('keydown',event=>{
+  if(window.ManabiHID)return; // The common page-aware burst reader owns this path.
   const target=event.target;
   if(event.defaultPrevented||!ready()||event.isComposing||event.keyCode===229||event.ctrlKey||event.metaKey||event.altKey||target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')||document.querySelector('dialog[open]')){burst='';return;}
   if(event.key==='Enter'||event.key==='Tab'){
@@ -2976,7 +2977,8 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   if(!select)return false;
   if(![...select.options].some(o=>o.value===student.id)){const option=document.createElement('option');option.value=student.id;option.textContent=student.name+'｜'+student.code;select.append(option);}
   select.value=student.id;select.dispatchEvent(new Event('change',{bubbles:true}));
-  if(input.isConnected)input.value=student.name;
+  if(input.isConnected){input.value='';input.focus({preventScroll:true});}
+  else queueMicrotask(()=>{const replacement=[...document.querySelectorAll('[data-manabi-student-search]')].find(x=>selectLinks.get(x)?.getAttribute('onchange')===change);if(replacement){replacement.value='';replacement.focus({preventScroll:true});}});
   toast(student.name+'さんを選択しました。');return true;
  }
  function applyList(kind,student,input){
@@ -2997,7 +2999,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   }
   render();
   const next=[...document.querySelectorAll('#content input')].find(node=>context(node)===kind);
-  if(next)next.focus({preventScroll:true});
+  if(next){next.focus({preventScroll:true});next.select();}
   toast(student.name+'さんを表示しました。');return true;
  }
  function chooseIntake(input,student){
@@ -3005,14 +3007,14 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   const controls=[...form.elements].map((node,index)=>({index,name:node.name,value:node.value,checked:node.checked}));
   if(!moveToStudent(student))return false;
   if(!form.isConnected){const replacement=document.querySelector('#content form[onsubmit="v6IntakeSave(event)"]');if(!replacement)return false;for(const saved of controls){const node=replacement.elements[saved.index];if(node&&node.name===saved.name){node.value=saved.value;if('checked' in node)node.checked=saved.checked;}}input=replacement.querySelector('input[name="code"]');}
-  input.value=student.code;input.dataset.selectedStudent=student.id;
+  input.value=student.code;input.select();input.dataset.selectedStudent=student.id;
   let label=input.parentElement.querySelector('[data-manabi-student-result]');if(!label){label=document.createElement('span');label.className='small';label.dataset.manabiStudentResult='';input.after(label);}label.textContent=student.name;
   toast(student.name+'さんを選択しました。');return true;
  }
  function applyInput(input,explicit=false){
   const kind=context(input);if(!kind||!ready())return false;
   const allowName=kind==='select'||kind==='intake',student=lookup(input.value,allowName,explicit,eligibleFor(kind,input));
-  if(!student)return false;
+  if(!student){if(explicit)input.select?.();return false;}
   if(!scanGate.accept(input,student.id))return true;
   if(kind==='picker')return scanPicker(input.value);
   if(kind==='select')return chooseNative(input,student);
@@ -3301,4 +3303,127 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
   if(before!==currentRoom()&&ordinary(t)&&roomTeachers().some(x=>x.id===t.id)){state.daily.teacher=t.name;if(state.page==='daily')render();}
   return result;
  };
+})();
+
+/* Attendance and its drill-down share the persisted lesson source. Preparing a
+   seat or an unsubmitted draft alone is never converted into a worked period. */
+(()=>{
+ const previousLogin=v13LoginSuccess;
+ v13LoginSuccess=function(...args){state.daily.from='';state.daily.to='';state.daily.room='__all__';v8Prefs.dailySlot='all';return previousLogin(...args);};
+ const lessonRoom=l=>v14RoomFromLesson(l);
+ const roomMatches=l=>state.daily.room==='__all__'||lessonRoom(l)===(state.daily.room||currentRoom());
+ // The original report list filtered by the pupil's current membership. Use the
+ // classroom recorded on the lesson so transfers cannot hide historical work.
+ v8DailyItems=function(){
+  const f=state.daily,rows=new Map();
+  for(const l of db.lessons)if(l&&safeStudent(l.student)&&roomMatches(l))rows.set('lesson:'+l.id,{id:'lesson:'+l.id,d:l,kind:'lesson',key:'',status:l.status||'下書き'});
+  for(const [key,d] of Object.entries(db.deskDrafts||{})){if(!d||!safeStudent(d.student)||!roomMatches(d)||!d._dirty||!v8DraftHasContent(d))continue;const old=d.id&&db.lessons.find(l=>l.id===d.id),id=old?'lesson:'+old.id:'draft:'+key;rows.set(id,{id,d,kind:'draft',key,status:'入力途中'});}
+  const status=s=>s==='確認済み'?'報告済み':['下書き','入力途中','未報告'].includes(s)?'未報告':s;
+  return [...rows.values()].filter(({d,status:s})=>(!f.from||d.date>=f.from)&&(!f.to||d.date<=f.to)&&(!f.student||d.student===f.student)&&(!f.teacher||d.teacher===f.teacher)&&(!f.subject||d.subject===f.subject)&&(!f.status||status(s)===status(f.status))&&(v8Prefs.dailySlot==='all'||d.slot===v8Prefs.dailySlot)).sort((a,b)=>{
+   const x=a.d,y=b.d,sort=f.sort||'date',c=sort==='teacher'?v8Collate(x.teacher,y.teacher):sort==='subject'?v8Collate(x.subject,y.subject):sort==='student'?v8Collate(safeStudent(x.student)?.name,safeStudent(y.student)?.name):0;
+   return c||(v8Prefs.dailyDir==='asc'?x.date.localeCompare(y.date):y.date.localeCompare(x.date))||(v8Prefs.dailyDir==='asc'?V8_SLOTS.indexOf(x.slot)-V8_SLOTS.indexOf(y.slot):V8_SLOTS.indexOf(y.slot)-V8_SLOTS.indexOf(x.slot))||v8Collate(safeStudent(x.student)?.kana,safeStudent(y.student)?.kana);
+  });
+ };
+ function showTeacher(id,scope={}){
+  const teacher=v14TeacherOptions().find(t=>t.id===id);if(!teacher)return false;
+  captureVisibleEditors();Object.assign(state.daily,{teacher:teacher.name,student:'',subject:'',status:'',from:scope.from||'',to:scope.to||'',room:scope.room||'__all__'});v8Prefs.dailySlot=scope.slot||'all';v8Prefs.dailyLimit=40;v8SelectedDaily.clear();navigate('daily');
+  const input=document.querySelector('[data-manabi-teacher-search]');if(input){input.value='';input.focus({preventScroll:true});}return true;
+ }
+ const previousDaily=renderDaily;
+ renderDaily=function(){const holder=document.createElement('div');holder.innerHTML=previousDaily();
+  const filters=holder.querySelector('.v8-daily-filter .toolbar');if(filters){const label=document.createElement('label');label.className='field';label.textContent='教室';const select=document.createElement('select');select.dataset.dailyRoom='';for(const value of ['__all__',...CLASSROOMS]){const o=document.createElement('option');o.value=value;o.textContent=value==='__all__'?'全教室':value;o.selected=value===(state.daily.room||currentRoom());select.append(o);}label.append(select);filters.prepend(label);}
+  const teacherSelect=[...holder.querySelectorAll('select')].find(s=>s.getAttribute('onchange')==="setDaily('teacher',this.value)");if(teacherSelect)teacherSelect.innerHTML=option('','すべての講師',state.daily.teacher)+v14TeacherOptions().map(t=>option(t.name,t.name,state.daily.teacher)).join('');
+  const sample=[...holder.querySelectorAll('button')].find(b=>b.textContent==='サンプル 11/17');if(sample){sample.removeAttribute('onclick');sample.dataset.attendanceToday='';sample.textContent='今日';}
+  const title=holder.querySelector('.v8-daily-actions h2');if(title)title.textContent='担当した生徒・授業報告';
+  return holder.innerHTML;
+ };
+ // The same source IDs drive each clickable count, never a separately stored total.
+ let scopes=[],shownLessons=[];
+ const button=(label,scope)=>{const i=scopes.push(scope)-1;return `<button type="button" class="btn text small attendance-link" data-attendance-scope="${i}">${esc(label)}</button>`;};
+ const previousAttendance=v14RenderAttendance;
+ v14RenderAttendance=function(){
+  if(v14AttendanceReady())v14Attendance.result=v14AttendanceReport();
+  const holder=document.createElement('div');holder.innerHTML=previousAttendance();scopes=[];
+  const r=v14AttendanceReady()?v14Attendance.result:null;if(!r)return holder.innerHTML;
+  const rootScope={month:r.month,room:r.room,teacherId:r.teacherId};
+  const count=holder.querySelector('.v14-stats .num');if(count)count.innerHTML=button(r.total+'コマ',rootScope);
+  [...holder.querySelectorAll('.v14-attend-table tbody tr')].forEach((tr,i)=>{const row=r.rows[i];if(!row)return;const scope={...rootScope,teacherId:row.teacherId,room:row.room,date:row.date};const cells=tr.cells;
+   cells[3].innerHTML=row.slots.map(slot=>button(slot.slot+'（'+slot.studentCount+'名）',{...scope,slot:slot.slot})).join(' ');
+   cells[4].innerHTML=button(row.count+'コマ',scope);cells[5].innerHTML=button(row.students+'名',scope);
+  });
+  [...holder.querySelectorAll('.v14-month-list tbody tr')].forEach((tr,i)=>{const t=r.teachers[i];if(t)tr.cells[2].innerHTML=button(t.total+'コマ',{...rootScope,teacherId:t.teacher.id});});
+  const footer=holder.querySelector('.v14-month-list tfoot tr');if(footer)footer.cells[2].innerHTML=button(r.total+'コマ',rootScope);
+  const subtitle=holder.querySelector('.pagehead p,.page-head p');if(subtitle)subtitle.textContent='保存した授業記録から集計。コマ数・人数を押すと担当生徒と報告を確認できます。';
+  return holder.innerHTML;
+ };
+ function recordsFor(scope){
+  const slots=v14AttendanceAggregate(scope.month).filter(x=>(scope.teacherId===V14_TEACHER_ALL||x.teacherId===scope.teacherId)&&(scope.room===V14_ROOM_ALL||x.room===scope.room)&&(!scope.date||x.date===scope.date)&&(!scope.slot||x.slot===scope.slot));
+  const ids=new Set(slots.flatMap(x=>x.ids));return db.lessons.filter(l=>ids.has(l.id)).sort((a,b)=>a.date.localeCompare(b.date)||V13_SLOTS.indexOf(a.slot)-V13_SLOTS.indexOf(b.slot)||v8Collate(safeStudent(a.student)?.name,safeStudent(b.student)?.name));
+ }
+ function detail(index){
+  const scope=scopes[index];if(!scope)return;shownLessons=recordsFor(scope);const periods=new Set(shownLessons.map(l=>[l.teacher,l.date,l.slot].join('|'))),students=new Set(shownLessons.map(l=>l.student));
+  const cards=shownLessons.map((l,i)=>`<article class="attendance-lesson"><div class="row between"><h3>${esc(safeStudent(l.student)?.name||'生徒')}｜${esc(l.subject)}</h3>${statusBadge(l.status)}</div><p class="small">${esc(l.date)} ${esc(l.slot)}コマ ／ ${esc(l.teacher)} ／ ${esc(lessonRoom(l))}</p><dl><dt>単元・教材</dt><dd class="preline">${esc([l.unit,materialsText(l)||l.material].filter(Boolean).join('\n')||'未記入')}</dd><dt>授業報告</dt><dd class="preline">${esc(l.obs||'未記入')}</dd><dt>宿題・次回</dt><dd class="preline">${esc([hwText(l)||l.homework,l.next].filter(Boolean).join('\n')||'未記入')}</dd></dl><button class="btn small" type="button" data-attendance-lesson="${i}">授業記録の詳細</button></article>`).join('');
+  modal('担当生徒・授業報告',`<p>${periods.size}コマ ／ 生徒${students.size}名 ／ 授業記録${shownLessons.length}件</p>${scope.teacherId!==V14_TEACHER_ALL?`<button class="btn small" type="button" data-attendance-daily="${index}">この条件で授業報告を開く</button>`:''}${cards||'<p>該当する授業記録はありません。</p>'}`);
+ }
+ document.addEventListener('change',e=>{if(e.target.matches?.('[data-daily-room]')){state.daily.room=e.target.value;render();}});
+ document.addEventListener('click',e=>{
+  const b=e.target.closest?.('button');if(!b)return;
+  if(b.hasAttribute('data-attendance-scope'))detail(Number(b.dataset.attendanceScope));
+  if(b.hasAttribute('data-attendance-lesson')){const l=shownLessons[Number(b.dataset.attendanceLesson)];if(l)reviewLesson(l.id);}
+  if(b.hasAttribute('data-attendance-daily')){const s=scopes[Number(b.dataset.attendanceDaily)];if(s){closeModal();showTeacher(s.teacherId,{from:s.date||s.month+'-01',to:s.date||new Date(Date.UTC(Number(s.month.slice(0,4)),Number(s.month.slice(5,7)),0)).toISOString().slice(0,10),slot:s.slot,room:s.room===V14_ROOM_ALL?'__all__':s.room});}}
+  if(b.hasAttribute('data-attendance-today')){state.daily.from=TODAY;state.daily.to=TODAY;v8Prefs.dailySlot='all';render();}
+ });
+ window.ManabiAttendance={showTeacher,recordsFor};
+})();
+
+// Keep the existing selected pupils and print controls, with pupils first.
+(()=>{
+ const previous=renderReports;
+ renderReports=function(){
+  const holder=document.createElement('div');holder.innerHTML=previous();
+  const controls=holder.querySelector('.report-controls'),layout=holder.querySelector('.report-layout');
+  const title=[...(controls?.querySelectorAll('.fieldtitle')||[])].find(n=>n.textContent.trim().startsWith('対象生徒'));
+  if(!title||!layout)return holder.innerHTML;
+  const section=document.createElement('section');section.className='card report-student-top';section.setAttribute('aria-label','対象生徒の選択');
+  let node=title;while(node&&!node.classList.contains('divider')){const next=node.nextSibling;section.append(node);node=next;}
+  if(node?.classList.contains('divider'))node.remove();layout.before(section);
+  return holder.innerHTML;
+ };
+})();
+
+/* A HID burst outside an editor follows the current page. Material input stays
+   explicitly attached to its pupil's material field; ordinary writing and IME
+   are never captured or delayed by this listener. */
+(()=>{
+ const pages=new Set(['home','desk','roster','profile','history','exams','qualifications','reports','daily','notes','master','audit']);
+ let burst='',last=0,composing=false;
+ const clear=()=>{burst='';last=0;};
+ const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
+ function dispatch(value){
+  if(!ready()||!pages.has(state.page))return false;
+  const student=ManabiScan.resolveScan(value,{kind:'student',items:db.students});
+  const teacher=window.ManabiTeacherScan?.resolve(value),credential=ManabiScan.staffCredential(value);
+  if(state.page==='daily'&&(credential||teacher?.matches.length)){void ManabiTeacherScan.scanInContext(value);return true;}
+  if(student.matches.length||ManabiScan.codeKind(ManabiScan.decodeASCII(value)||value)==='student'){ManabiStudentSelect.scanInContext(value);return true;}
+  if(ManabiScan.codeKind(value)==='material'){toast('教材は、対象生徒の教材名欄を選んで読み取ってください。');return true;}
+  if(ManabiScan.looksLikeScan(value,'student')){toast('この画面で使えるバーコードを確認してください。');return true;}
+  return false;
+ }
+ window.addEventListener('compositionstart',()=>{composing=true;clear();},true);
+ window.addEventListener('compositionend',()=>{composing=false;clear();},true);
+ window.addEventListener('blur',clear);
+ window.addEventListener('pointerdown',clear,true);
+ window.addEventListener('keydown',event=>{
+  const editable=event.target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"])');
+  const dialogs=[...document.querySelectorAll('dialog[open]')],blockedDialog=dialogs.some(d=>d.id!=='picker-dialog');
+  if(!ready()||!pages.has(state.page)||event.defaultPrevented||editable||blockedDialog||composing||ManabiScan.isComposing(event)||event.ctrlKey||event.metaKey||event.altKey){clear();return;}
+  if(ManabiScan.isTerminator(event)){
+   const value=burst,recent=Date.now()-last<650;clear();
+   if(value.length>=3&&recent){const result=dispatch(value);if(result){event.preventDefault();event.stopImmediatePropagation();}}
+   return;
+  }
+  if(event.key.length!==1){if(event.key!=='Shift')clear();return;}
+  const now=Date.now();if(now-last>350)burst='';last=now;burst=(burst+event.key).slice(-600);
+ },true);
+ window.ManabiHID={dispatch,clear};
 })();
