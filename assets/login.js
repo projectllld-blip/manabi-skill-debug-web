@@ -26,11 +26,13 @@
   catch(error){scan.value='';passwordForm.elements.password.value='';say(error.message);if(method==='barcode')scan.focus();}
   finally{staffBusy=false;for(const b of panel.querySelectorAll('button'))b.disabled=false;}
  }
- staffForm.onsubmit=event=>{event.preventDefault();return loginStaff({barcode:normalizeBarcode(scan.value)});};
+ const isStaffBarcode=value=>/^(?:TL-[A-F0-9]{48}|91[0-9]{30})$/.test(value);
+ const rejectBarcode=()=>{scan.value='';say('講師用のバーコードを読み取ってください。生徒・教材のコードは使えません。');scan.focus();};
+ staffForm.onsubmit=event=>{event.preventDefault();const barcode=normalizeBarcode(scan.value);if(!isStaffBarcode(barcode)){rejectBarcode();return;}return loginStaff({barcode});};
  // Readers with or without an Enter suffix and pasted card numbers use the same path.
- scan.addEventListener('input',()=>{const barcode=normalizeBarcode(scan.value);if(!panel.hidden&&method==='barcode'&&/^(?:TL-[A-F0-9]{48}|91[0-9]{30})$/.test(barcode))void loginStaff({barcode});});
- scan.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void staffForm.onsubmit(event);}});
- passwordForm.onsubmit=event=>{event.preventDefault();return loginStaff({method:'password',login_id:passwordForm.elements.login_id.value,password:passwordForm.elements.password.value});};
+ scan.addEventListener('input',event=>{if(event.isComposing)return;const barcode=normalizeBarcode(scan.value);if(!panel.hidden&&method==='barcode'){if(/^MAT-[0-9]{6,}$/.test(barcode))rejectBarcode();else if(isStaffBarcode(barcode))void loginStaff({barcode});}});
+ scan.addEventListener('keydown',event=>{if(!event.isComposing&&event.keyCode!==229&&(event.key==='Enter'||event.key==='Tab'&&scan.value.trim())){event.preventDefault();void staffForm.onsubmit(event);}});
+ passwordForm.onsubmit=event=>{event.preventDefault();if(/^MAT-/i.test(passwordForm.elements.login_id.value.normalize('NFKC').trim())){passwordForm.elements.password.value='';say('教材バーコードは講師IDとして使えません。講師IDを入力してください。');return;}return loginStaff({method:'password',login_id:passwordForm.elements.login_id.value,password:passwordForm.elements.password.value});};
  document.getElementById('change-account').onclick=async()=>{await auth.signOut();location.reload();};
  document.getElementById('forgot').onclick=()=>say('パスワードの再設定は代表へ依頼してください。');
  auth.session().then(proceed).catch(error=>{if(error.status!==401)say(error.message);});

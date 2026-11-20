@@ -2623,11 +2623,12 @@ var ManabiBarcode = (() => {
     const text = String(code ?? "").trim().toUpperCase();
     const compactStaff = /^91[0-9]{30}$/.test(text);
     const staff = compactStaff || /^TL-[A-F0-9]{48}$/.test(text);
+    const material = /^MAT-[0-9]{6,9}$/.test(text);
     if (!text || !staff && [...text].some((ch) => !CODE39_CHARS.includes(ch))) {
       return '<span class="small" style="color:#a33">\u756A\u53F7\u306B\u30D0\u30FC\u30B3\u30FC\u30C9\u975E\u5BFE\u5FDC\u6587\u5B57\u304C\u3042\u308A\u307E\u3059</span>';
     }
     let bits;
-    if (staff) {
+    if (staff || material) {
       const start = compactStaff ? 105 : 104;
       const values = compactStaff ? text.match(/../g).map(Number) : [...text].map((ch) => ch.charCodeAt(0) - 32);
       const check = (start + values.reduce((sum, value, i) => sum + value * (i + 1), 0)) % 103;
@@ -2636,13 +2637,13 @@ var ManabiBarcode = (() => {
       const values = [148, ...[...text].map((ch) => CODE39_PATTERNS[CODE39_CHARS.indexOf(ch)]), 148];
       bits = values.map((value) => [...value.toString(2).padStart(9, "0")].map((wide, i) => (i % 2 ? "0" : "1").repeat(wide === "1" ? 3 : 1)).join("")).join("0");
     }
-    const scale = staff ? 1 : small ? 1.5 : 2.05;
-    const barHeight = compactStaff ? 42 : staff ? 72 : small ? 42 : 62;
+    const scale = staff || material ? 1 : small ? 1.5 : 2.05;
+    const barHeight = material ? 24 : compactStaff ? 42 : staff ? 72 : small ? 42 : 62;
     const quiet = 10;
     const width = (bits.length + quiet * 2) * scale, height = barHeight + 8;
     const number = (n) => String(Math.round(n * 1e3) / 1e3);
     const bars = [...bits.matchAll(/1+/g)].map((match) => `<rect x="${number((quiet + match.index) * scale)}" y="4" width="${number(match[0].length * scale)}" height="${barHeight}" fill="#111"/>`).join("");
-    const format = staff ? "Code128" : "Code39";
+    const format = staff || material ? "Code128" : "Code39";
     return `<svg class="manabi-barcode${compactStaff ? " manabi-compact-staff-barcode" : staff ? " manabi-staff-barcode" : ""}" role="img" aria-label="\u756A\u53F7 ${escapeHTML(text)} \u306E${format}\u30D0\u30FC\u30B3\u30FC\u30C9" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${height}" width="${number(width)}" height="${height}" preserveAspectRatio="xMidYMid meet"><rect x="0" y="0" width="${number(width)}" height="${height}" fill="#fff"/>${bars}</svg>`;
   }
   return __toCommonJS(barcode_exports);
@@ -2657,7 +2658,8 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   .replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'')
   .replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'')
   .replace(/[‐‑‒–—−]/g,'-').trim();
- const matches=value=>{const code=normalize(value);return code?db.students.filter(s=>normalize(s.code)===code&&activeStudent(s)):[];};
+ const wrongKind=value=>/^(?:MAT-|TL-)/.test(normalize(value))||/^91[0-9]{30}$/.test(normalize(value));
+ const matches=value=>{const code=normalize(value);return code&&!wrongKind(code)?db.students.filter(s=>normalize(s.code)===code&&activeStudent(s)):[];};
  const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
  const focusScanner=()=>{const input=document.getElementById('scan-student');if(input){input.value='';input.focus({preventScroll:true});}};
  let inputTimer;
@@ -2665,6 +2667,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   clearTimeout(inputTimer);
   if(!ready())return false;
   const code=normalize(value),found=matches(value);
+  if(wrongKind(code)){toast('生徒用のバーコードを読み取ってください。講師・教材のコードは使えません。');return false;}
   if(!code){toast('生徒番号をスキャン・入力してください。');return false;}
   if(found.length!==1){toast(found.length?'同じ生徒番号が複数あります。マスター管理で確認してください。':'在籍生徒の番号が見つかりません：'+code);return false;}
   const student=found[0],rooms=v12StudentRooms(student);
@@ -2695,11 +2698,11 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   clearTimeout(inputTimer);
   if(event.isComposing)return;
   const input=event.target;
-  inputTimer=setTimeout(()=>{if(input.isConnected&&matches(input.value).length===1)scanStudent(input.value);},220);
+  inputTimer=setTimeout(()=>{if(input.isConnected&&(matches(input.value).length===1||wrongKind(input.value)))scanStudent(input.value);},220);
  },true);
  document.addEventListener('compositionend',event=>{
   if(!dedicated(event.target))return;clearTimeout(inputTimer);const input=event.target;
-  inputTimer=setTimeout(()=>{if(input.isConnected&&matches(input.value).length===1)scanStudent(input.value);},220);
+  inputTimer=setTimeout(()=>{if(input.isConnected&&(matches(input.value).length===1||wrongKind(input.value)))scanStudent(input.value);},220);
  },true);
  // Scanning while no text field is selected works on the home/lesson screens.
  // Never capture ordinary writing, passwords, composing text or keyboard shortcuts.
@@ -2723,9 +2726,11 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
 (()=>{
  const normalize=value=>String(value??'').normalize('NFKC').trim().toUpperCase().replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'').replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'').replace(/[‐‑‒–—−]/g,'-').trim();
  const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
- const byCode=value=>db.students.filter(s=>normalize(s.code)===normalize(value)&&normalize(value));
+ const wrongKind=value=>/^(?:MAT-|TL-)/.test(normalize(value))||/^91[0-9]{30}$/.test(normalize(value));
+ const byCode=value=>wrongKind(value)?[]:db.students.filter(s=>normalize(s.code)===normalize(value)&&normalize(value));
  const known=value=>byCode(value).length>0;
  const lookup=(value,names=false,announce=false,eligible=activeStudent)=>{
+  if(wrongKind(value)){if(announce)toast('生徒用のバーコードを読み取ってください。講師・教材のコードは使えません。');return null;}
   let found=byCode(value);
   if(!found.length&&names){const q=norm(String(value).trim());found=db.students.filter(s=>q&&[s.name,s.kana].some(x=>norm(x)===q));}
   if(found.length>1){if(announce)toast('同じ番号・名前が複数あります。生徒番号か一覧から確認してください。');return null;}
@@ -2845,17 +2850,17 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  }
  document.addEventListener('input',event=>{
   const input=event.target,kind=context(input);if(!kind||event.isComposing)return;
-  clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(input.isConnected&&(known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false,eligibleFor(context(input),input)))))applyInput(input,true);},220);
+  clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(input.isConnected&&(wrongKind(input.value)||known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false,eligibleFor(context(input),input)))))applyInput(input,true);},220);
  },true);
  document.addEventListener('compositionend',event=>{
   const input=event.target;if(!context(input))return;
-  clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(input.isConnected&&known(input.value))applyInput(input,true);},220);
+  clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(input.isConnected&&(wrongKind(input.value)||known(input.value)))applyInput(input,true);},220);
  },true);
  document.addEventListener('keydown',event=>{
   if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
   const input=event.target,kind=context(input);if(!kind)return;
   // Preserve ordinary text search and tab navigation unless an exact student is ready.
-  const selected=known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false));
+  const selected=wrongKind(input.value)||known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false));
   if(!selected&&(event.key==='Tab'||!input.value.trim()||kind!=='select'&&kind!=='intake'))return;
   event.preventDefault();event.stopImmediatePropagation();clearTimeout(inputTimer);applyInput(input,true);
  },true);
@@ -2968,4 +2973,88 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   editorRoot(token)?.querySelector(`[data-copy-previous="${kind}"]`)?.focus({preventScroll:true});
   for(const [node,top,left]of positions)if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
  });
+})();
+
+/* Resolve a material barcode only inside the existing material-name fields.
+   The catalog is the authenticated shared snapshot, so scanning needs no extra
+   network request and uses the same {catalogId, name} fields as the picker. */
+(()=>{
+ const selector='input[data-mat-field="name"],input[data-home-field="name"],input[data-next-field="name"]';
+ const hint=html=>html.replace('placeholder="選択または手入力"','placeholder="選択・手入力・教材バーコード"');
+ const previousMaterialRow=renderMaterialRow;renderMaterialRow=function(...args){return hint(previousMaterialRow(...args));};
+ const previousHomeworkRow=renderHWRow;renderHWRow=function(...args){return hint(previousHomeworkRow(...args));};
+ const previousNextRow=v7NextRow;v7NextRow=function(...args){return hint(previousNextRow(...args));};
+ const normalize=value=>String(value??'').normalize('NFKC').trim().toUpperCase().replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'').replace(/[‐‑‒–—−]/g,'-').trim();
+ const studentCode=value=>normalize(value).replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'');
+ const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
+ const materialCode=value=>/^MAT-[0-9]{6,9}$/.test(normalize(value));
+ const otherCode=value=>{const code=normalize(value);return /^LLLD[:-]/.test(code)||/^TL-/.test(code)||/^91[0-9]{30}$/.test(code)||/^D-[0-9]+$/.test(studentCode(code))||(db.students||[]).some(student=>studentCode(student.code)===studentCode(code));};
+ const prefixOnly=value=>{const raw=String(value??'').normalize('NFKC').trim().toUpperCase(),code=normalize(value);return /^\](?:[A-Z](?:[0-9])?)?$/.test(raw)||raw==='*'||/^\][A-Z][0-9]\*?$/.test(raw)||['LLLD:STUDENT:','LLLD-STUDENT-','LLLD:','LLLD-'].some(prefix=>code&&prefix.startsWith(code))||/^M(?:A(?:T(?:-[0-9]*)?)?)?$/.test(code)||/^T(?:L(?:-[A-Z0-9]*)?)?$/.test(code)||/^9(?:1[0-9]*)?$/.test(code)||(code&&(db.students||[]).some(student=>normalize(student.code).startsWith(code)));};
+ const barcodeLike=value=>/^MAT-/.test(normalize(value))||otherCode(value);
+ const locate=input=>{
+  if(!input?.matches?.(selector)||input.disabled||input.readOnly)return null;
+  const form=input.closest('form[data-editor]');if(!form)return null;
+  for(const [prefix,key] of [['mat','materials'],['home','homeworkItems'],['next','nextMaterials']]){
+   if(input.getAttribute('data-'+prefix+'-field')!=='name')continue;
+   const container=input.closest('[data-'+prefix+'-index]'),index=Number(container?.getAttribute('data-'+prefix+'-index'));
+   if(container&&Number.isSafeInteger(index)&&index>=0)return {form,token:form.dataset.editor,key,index,container,prefix};
+  }
+  return null;
+ };
+ const baseline=new WeakMap(),resolved=new WeakSet(),manualPrefix=new WeakMap();let inputTimer;
+ const remember=input=>{const place=locate(input),row=place&&getEditor(place.token)?.[place.key]?.[place.index];if(row)baseline.set(input,{name:row.name||'',catalogId:row.catalogId||'',sourcePages:row.sourcePages});};
+ // The legacy app saves after each keystroke. A partially read code must not
+ // replace the previously selected Japanese name or leak into a lesson report.
+ const priorCapture=captureEntry;
+ captureEntry=function(token){
+  const root=editorRoot(token),draft=getEditor(token),held=[];
+  for(const input of root?.querySelectorAll(selector)||[]){
+   const place=locate(input);if(!place||!(barcodeLike(input.value)||prefixOnly(input.value)&&manualPrefix.get(input)!==input.value))continue;
+   held.push([input,input.value]);input.value=baseline.get(input)?.name??draft?.[place.key]?.[place.index]?.name??'';
+  }
+  try{return priorCapture(token);}finally{for(const [input,value] of held)input.value=value;}
+ };
+ function focusNext(place){
+  const field=place.container.querySelector('[data-'+place.prefix+'-field="'+(place.prefix==='mat'?'content':'unit')+'"]')||place.container.querySelector('[data-'+place.prefix+'-field="pages"]');
+  for(let node=field?.parentElement;node;node=node.parentElement)if(node.tagName==='DETAILS')node.open=true;
+  field?.focus({preventScroll:true});
+ }
+ function apply(input,moveFocus=false){
+  const place=locate(input);if(!place||!ready()||!barcodeLike(input.value))return false;
+  clearTimeout(inputTimer);
+  const code=normalize(input.value),draft=getEditor(place.token),previous=draft?.[place.key]?.[place.index];
+  if(!previous)return false;
+  let message='';const found=(db.catalog||[]).filter(book=>normalize(book.barcode)===code);
+  if(otherCode(code))message='ここは教材名の入力欄です。教材用のバーコードを読み取ってください。';
+  else if(!materialCode(code))message='教材バーコードの形式を確認してください。';
+  else if(found.length!==1)message=found.length?'同じ教材コードが複数あります。教室長へ確認してください。':'教材バーコードが見つかりません。教材マスターを確認してください。';
+  else if(found[0].active===false)message='この教材は現行マスターから除外されています。別の教材を選択してください。';
+  if(message){const saved=baseline.get(input);if(saved){previous.name=saved.name;previous.catalogId=saved.catalogId;if(saved.sourcePages!==undefined)previous.sourcePages=saved.sourcePages;}input.value=previous.name||'';captureEntry(place.token);const restored=getEditor(place.token)?.[place.key]?.[place.index];if(restored&&saved)restored.catalogId=saved.catalogId;persist();input.setAttribute('aria-invalid','true');toast(message);input.focus({preventScroll:true});input.select();return true;}
+  const book=found[0];input.removeAttribute('aria-invalid');input.value=book.title;
+  const next=captureEntry(place.token),row=next?.[place.key]?.[place.index];if(!row)return false;
+  row.name=book.title;row.catalogId=book.id;touchDraft(next);persist();remember(input);resolved.add(input);
+  // No rerender: unit/page text, neighbouring pupils and scroll positions stay put.
+  if(typeof v9RefreshRequired==='function')v9RefreshRequired(place.form);
+  if(moveFocus)focusNext(place);
+  if(!moveFocus)input.select();
+  toast('教材名を反映しました。単元名・ページを続けて入力できます。');return true;
+ }
+ document.addEventListener('keydown',event=>{
+  if(event.isComposing||event.keyCode===229||event.ctrlKey||event.metaKey||event.altKey||!['Enter','Tab'].includes(event.key))return;
+  const input=event.target,place=locate(input);if(!place)return;
+  if(!barcodeLike(input.value)){
+   if(prefixOnly(input.value)){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}
+   if(!resolved.has(input))return;
+   event.preventDefault();event.stopImmediatePropagation();resolved.delete(input);
+   focusNext(place);return;
+  }
+  event.preventDefault();event.stopImmediatePropagation();apply(input,true);
+ },true);
+ const schedule=input=>{clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(!input.isConnected)return;if(materialCode(input.value)||otherCode(input.value))apply(input);else if(!barcodeLike(input.value)&&prefixOnly(input.value)){const place=locate(input);if(place&&ready()){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}}},220);};
+ document.addEventListener('input',event=>{if(!locate(event.target))return;if(!baseline.has(event.target))remember(event.target);resolved.delete(event.target);manualPrefix.delete(event.target);clearTimeout(inputTimer);if(!event.isComposing){const input=event.target,value=input.value;if(!barcodeLike(value)&&!prefixOnly(value))queueMicrotask(()=>{if(input.isConnected&&input.value===value)remember(input);});schedule(input);}},true);
+ document.addEventListener('change',event=>{const input=event.target,place=locate(input);if(!place)return;if(barcodeLike(input.value))apply(input);else if(prefixOnly(input.value)){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}},true);
+ document.addEventListener('compositionend',event=>{if(locate(event.target))schedule(event.target);},true);
+ document.addEventListener('focusout',event=>{if(locate(event.target))resolved.delete(event.target);});
+ document.addEventListener('focusin',event=>{const input=event.target;if(!locate(input))return;remember(input);input.placeholder='選択・手入力・教材バーコード';input.autocomplete='off';input.select();});
+ window.ManabiMaterialScan={apply,normalize};
 })();
