@@ -2542,6 +2542,7 @@ var ManabiScan = (() => {
     normalizeScan: () => normalizeScan,
     resolveScan: () => resolveScan,
     scanCandidates: () => scanCandidates,
+    splitScanStream: () => splitScanStream,
     staffCredential: () => staffCredential,
     stripStudentPrefix: () => stripStudentPrefix,
     validGTIN: () => validGTIN,
@@ -2631,6 +2632,33 @@ var ManabiScan = (() => {
   }
   var isComposing = (event) => !!(event.isComposing || event.keyCode === 229);
   var isTerminator = (event) => !isComposing(event) && !event.ctrlKey && !event.metaKey && !event.altKey && ["Enter", "Tab"].includes(event.key);
+  function splitScanStream(value, { kind, items = [], keys = defaultKeys[kind] || ["id"] } = {}) {
+    const raw = normalizeScan(value);
+    if (!raw || raw.length > 600 || resolveScan(raw, { kind, items, keys }).matches.length || kind === "teacher" && staffCredential(raw)) return [raw];
+    const codes = new Set(items.flatMap((item) => aliases(item, kind, keys)).filter(Boolean));
+    for (const c of [...codes]) if (/[A-Z]/.test(c)) codes.add([...c].map((x) => String(x.charCodeAt(0)).padStart(3, "0")).join(""));
+    const candidates = [...codes].filter((c) => c.length >= 3).sort((a, b) => b.length - a.length), memo = /* @__PURE__ */ new Map();
+    function split(at) {
+      if (at === raw.length) return [];
+      if (memo.has(at)) return memo.get(at);
+      const rest = raw.slice(at), options = candidates.filter((c) => rest.startsWith(c));
+      if (kind === "teacher") for (const n of [153, 96, 51, 32]) {
+        const c = rest.slice(0, n);
+        if (c.length === n && staffCredential(c)) options.push(c);
+      }
+      memo.set(at, null);
+      for (const c of options) {
+        const tail = split(at + c.length);
+        if (tail) {
+          const result = [c, ...tail];
+          memo.set(at, result);
+          return result;
+        }
+      }
+      return null;
+    }
+    return split(0) || [raw];
+  }
   function createScanGate({ now = () => Date.now(), windowMs = 650 } = {}) {
     const states = /* @__PURE__ */ new WeakMap();
     return { accept(target, value) {
@@ -2851,11 +2879,15 @@ var ManabiStaffProfile = (() => {
   // shared/staff-profile.mjs
   var staff_profile_exports = {};
   __export(staff_profile_exports, {
+    COMMON_FIELDS: () => COMMON_FIELDS,
     PROFILE_PAGE: () => PROFILE_PAGE,
+    SUBJECT_FIELDS: () => SUBJECT_FIELDS,
     profilePages: () => profilePages,
     profileSections: () => profileSections
   });
-  function profileSections(db, sid, { subject = "", axes = [] } = {}) {
+  var COMMON_FIELDS = [["text", "\u5168\u6559\u79D1\u5171\u901A\u306E\u6307\u5C0E\u65B9\u91DD\u30FB\u63A5\u3057\u65B9"], ["learningStyle", "\u751F\u5F92\u306E\u7279\u6027\u30FB\u5408\u3046\u5B66\u7FD2\u65B9\u6CD5"], ["goals", "\u76EE\u6A19\u30FB\u80B2\u3066\u305F\u3044\u529B"], ["homeworkPolicy", "\u5BBF\u984C\u30FB\u5BB6\u5EAD\u5B66\u7FD2\u306E\u65B9\u91DD"]];
+  var SUBJECT_FIELDS = [["text", "\u6559\u79D1\u306E\u6307\u5C0E\u65B9\u91DD"], ["goals", "\u6559\u79D1\u76EE\u6A19"], ["learningStatus", "\u73FE\u5728\u306E\u5B66\u7FD2\u72B6\u6CC1\u30FB\u7559\u610F\u70B9"], ["materialsPlan", "\u4F7F\u7528\u6559\u6750\u30FB\u9032\u3081\u65B9"], ["homeworkPolicy", "\u5BBF\u984C\u30FB\u5BB6\u5EAD\u5B66\u7FD2\u306E\u65B9\u91DD"]];
+  function profileSections(db, sid, { subject = "\u5168\u4F53", axes = [] } = {}) {
     const s = (db.students || []).find((x) => x.id === sid);
     if (!s) return null;
     const policies = db.policies || [], lessons = (db.lessons || []).filter((x) => x.student === sid && x.status !== "\u4E0B\u66F8\u304D").sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.slot).localeCompare(String(a.slot)) || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
@@ -2864,14 +2896,24 @@ var ManabiStaffProfile = (() => {
     const meta = (x) => [x?.updatedAt?.slice(0, 10), x?.updatedBy].filter(Boolean).join(" \uFF0F ");
     add("\u57FA\u672C\u60C5\u5831", [`${s.name} \uFF0F ${s.code || s.id}`, `${s.grade || ""} \uFF0F ${s.schoolName || "\u5B66\u6821\u672A\u767B\u9332"} \uFF0F ${s.school || ""}`, `\u53D7\u8B1B\u6559\u79D1\uFF1A${(s.subjects || []).join("\u30FB") || "\u672A\u767B\u9332"}`, `\u53D7\u8B1B\u533A\u5206\uFF1A${(s.attributes || []).join("\u30FB") || "\u672A\u767B\u9332"}`].join("\n"));
     const all = getPolicy("\u5168\u4F53");
-    add("\u5168\u4F53\u306E\u6307\u5C0E\u65B9\u91DD\u30FB\u63A5\u3057\u65B9", all ? [all.text, meta(all)].filter(Boolean).join("\n") : "\u672A\u767B\u9332");
+    for (const [key, label] of COMMON_FIELDS) add(label, all?.[key]);
+    if (all) add("\u5171\u901A\u65B9\u91DD\u306E\u66F4\u65B0", meta(all));
     const handovers = (db.handovers || []).filter((x) => x.student === sid && x.status !== "\u5BFE\u5FDC\u6E08\u307F" && (!subject || x.subject === "\u5168\u4F53" || x.subject === subject)).sort((a, b) => Number(b.priority === "\u91CD\u8981") - Number(a.priority === "\u91CD\u8981") || String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
     add("\u62C5\u5F53\u8B1B\u5E2B\u3078\u306E\u9023\u7D61\u4E8B\u9805\uFF08\u7D99\u7D9A\u4E2D\uFF09", handovers.map((x) => `\u3010${x.subject || "\u5168\u4F53"}\u30FB${x.priority || "\u901A\u5E38"}\u3011${x.text}
 ${meta(x) || x.author || ""}`).join("\n\n") || "\u7D99\u7D9A\u4E2D\u306E\u9023\u7D61\u4E8B\u9805\u306F\u3042\u308A\u307E\u305B\u3093\u3002");
-    const subjects = subject ? [subject] : [.../* @__PURE__ */ new Set([...s.subjects || [], ...policies.filter((x) => x.student === sid).map((x) => x.subject), ...lessons.map((x) => x.subject), ...(db.assessments || []).filter((x) => x.student === sid).map((x) => x.subject), ...(db.profileObservations || []).filter((x) => x.studentId === sid).map((x) => x.subject)])].filter((x) => x && x !== "\u5168\u4F53");
+    const commonNotes = (db.profileObservations || []).filter((x) => x.studentId === sid && x.subject === "\u5168\u4F53").sort((x, y) => String(y.at || "").localeCompare(String(x.at || ""))).slice(0, 3);
+    add("\u5168\u6559\u79D1\u5171\u901A\u306E\u8B1B\u5E2B\u6240\u898B", commonNotes.map((x) => `${x.at?.slice(0, 10) || ""} \uFF0F ${x.teacher || ""}
+${x.text}`).join("\n\n"));
+    if (subject === "\u5168\u4F53") {
+      const a = (db.assessments || []).filter((x) => x.student === sid && x.subject === "\u5168\u4F53").sort((x, y) => String(y.date).localeCompare(String(x.date)))[0];
+      add("\u5168\u6559\u79D1\u5171\u901A\u306E\u30B9\u30AD\u30EB\u8A55\u4FA1\u3068\u6839\u62E0", a ? `${a.date}
+` + (a.axisNames || axes).map((n, i) => `${n}\uFF1A${a.values?.[i] ?? "\u672A\u8A55\u4FA1"} \uFF0F ${a.evidence?.[i] || "\u6839\u62E0\u672A\u767B\u9332"}`).join("\n") : "\u672A\u8A55\u4FA1");
+    }
+    const subjects = subject === "\u5168\u4F53" ? [] : subject ? [subject] : [.../* @__PURE__ */ new Set([...s.subjects || [], ...policies.filter((x) => x.student === sid).map((x) => x.subject), ...lessons.map((x) => x.subject), ...(db.assessments || []).filter((x) => x.student === sid).map((x) => x.subject), ...(db.profileObservations || []).filter((x) => x.studentId === sid).map((x) => x.subject)])].filter((x) => x && x !== "\u5168\u4F53");
     for (const sub of subjects) {
       const p = getPolicy(sub), l = lessons.find((x) => x.subject === sub), a = (db.assessments || []).filter((x) => x.student === sid && x.subject === sub).sort((x, y) => String(y.date).localeCompare(String(x.date)) || String(y.createdAt || "").localeCompare(String(x.createdAt || "")))[0];
       add(sub + "\uFF5C\u6307\u5C0E\u65B9\u91DD\u30FB\u6559\u79D1\u76EE\u6A19", p ? [p.text, meta(p)].filter(Boolean).join("\n") : "\u672A\u767B\u9332");
+      for (const [key, label] of SUBJECT_FIELDS.filter(([key2]) => key2 !== "text")) if (p?.[key]) add(sub + "\uFF5C" + label + "\uFF08\u30AB\u30EB\u30C6\u767B\u9332\uFF09", p[key]);
       add(sub + "\uFF5C\u73FE\u5728\u306E\u5B66\u7FD2\u72B6\u6CC1\u30FB\u7559\u610F\u70B9", l ? `${l.date} ${l.slot || ""} \uFF0F ${l.teacher || "\u62C5\u5F53\u672A\u767B\u9332"}
 \u5358\u5143\uFF1A${l.unit || "\u672A\u767B\u9332"}
 \u3067\u304D\u305F\u3053\u3068\u30FB\u6C17\u3065\u304D\uFF1A${l.obs || "\u672A\u767B\u9332"}
@@ -3130,7 +3172,7 @@ ${x.text}`).join("\n\n"));
   }
   render();
   const next=[...document.querySelectorAll('#content input')].find(node=>context(node)===kind);
-  if(next){next.focus({preventScroll:true});next.select();}
+  if(next){next.value='';next.focus({preventScroll:true});}
   toast(student.name+'さんを表示しました。');return true;
  }
  function chooseIntake(input,student){
@@ -3139,6 +3181,7 @@ ${x.text}`).join("\n\n"));
   if(!moveToStudent(student))return false;
   if(!form.isConnected){const replacement=document.querySelector('#content form[onsubmit="v6IntakeSave(event)"]');if(!replacement)return false;for(const saved of controls){const node=replacement.elements[saved.index];if(node&&node.name===saved.name){node.value=saved.value;if('checked' in node)node.checked=saved.checked;}}input=replacement.querySelector('input[name="code"]');}
   input.value=student.code;input.select();input.dataset.selectedStudent=student.id;
+  window.ManabiScanInput?.mark(input);
   let label=input.parentElement.querySelector('[data-manabi-student-result]');if(!label){label=document.createElement('span');label.className='small';label.dataset.manabiStudentResult='';input.after(label);}label.textContent=student.name;
   toast(student.name+'さんを選択しました。');return true;
  }
@@ -3174,6 +3217,7 @@ ${x.text}`).join("\n\n"));
  document.addEventListener('keydown',event=>{
   if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
   const input=event.target,kind=context(input);if(!kind)return;
+  if(input.matches('[data-inline-student]'))return; // Its visible candidate list handles Enter/arrow selection.
   // Preserve ordinary text search and tab navigation unless an exact student is ready.
   const selected=ManabiScan.looksLikeScan(input.value,'student')||wrongKind(input.value)||known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false));
   if(!selected&&(event.key==='Tab'||!input.value.trim()||kind!=='select'&&kind!=='intake'))return;
@@ -3199,7 +3243,7 @@ ${x.text}`).join("\n\n"));
   else return false;
   return true;
  }
- window.ManabiStudentSelect={scanPicker,scanInContext,mount};
+ window.ManabiStudentSelect={scanPicker,scanInContext,mount,context,moveToStudent,chooseNative,chooseIntake,eligibleFor};
  const previousRender=render;render=function(...args){const out=previousRender(...args);mount();return out;};
  // Legacy drafts address controls by position. Search helpers are UI-only and
  // must never shift the saved fields; restoration runs before mount below.
@@ -3316,7 +3360,7 @@ ${x.text}`).join("\n\n"));
   }
   return null;
  };
- const baseline=new WeakMap(),resolved=new WeakSet(),manualPrefix=new WeakMap(),composing=new WeakSet();let inputTimer;
+ const baseline=new WeakMap(),resolved=new WeakSet(),terminated=new WeakMap(),manualPrefix=new WeakMap(),composing=new WeakSet();let inputTimer;
  const remember=input=>{const place=locate(input),row=place&&getEditor(place.token)?.[place.key]?.[place.index];if(row)baseline.set(input,{name:row.name||'',catalogId:row.catalogId||'',sourcePages:row.sourcePages});};
  // The legacy app saves after each keystroke. A partially read code must not
  // replace the previously selected Japanese name or leak into a lesson report.
@@ -3357,8 +3401,7 @@ ${x.text}`).join("\n\n"));
   row.name=book.title;row.catalogId=book.id;touchDraft(next);persist();remember(input);resolved.add(input);
   // No rerender: unit/page text, neighbouring pupils and scroll positions stay put.
   if(typeof v9RefreshRequired==='function')v9RefreshRequired(place.form);
-  if(moveFocus)focusNext(place);
-  if(!moveFocus)input.select();
+  input.focus({preventScroll:true});input.select();terminated.set(input,moveFocus);window.ManabiScanInput?.mark(input);
   toast('教材名を反映しました。単元名・ページを続けて入力できます。');return true;
  }
  document.addEventListener('keydown',event=>{
@@ -3367,7 +3410,7 @@ ${x.text}`).join("\n\n"));
   if(!barcodeLike(input.value)){
    if(prefixOnly(input.value)){manualPrefix.set(input,input.value);captureEntry(place.token);remember(input);}
    if(!resolved.has(input))return;
-   event.preventDefault();event.stopImmediatePropagation();resolved.delete(input);
+   event.preventDefault();event.stopImmediatePropagation();if(!terminated.get(input)){terminated.set(input,true);return;}resolved.delete(input);
    focusNext(place);return;
   }
   event.preventDefault();event.stopImmediatePropagation();apply(input,true);
@@ -3564,6 +3607,115 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
  window.ManabiLessonDay={allowed,today,canPrepare:()=>allowed(extra.desk.date),deny:v16Deny};
 })();
 
+// Extend the existing policies records, preserving their IDs, versions and audit trail.
+(()=>{
+ const fields=sub=>sub==='全体'?ManabiStaffProfile.COMMON_FIELDS:ManabiStaffProfile.SUBJECT_FIELDS;
+ const key=(sid,sub)=>sid+'|'+sub,storeKey='manabi_profile_fields_drafts';
+ let drafts=v8Read(storeKey,{});
+ const oldNavigate=navigate;navigate=function(page){if(page==='profile'&&state.page!=='profile')state.subject='全体';return oldNavigate(page);};
+ const oldLogin=v13LoginSuccess;v13LoginSuccess=function(...args){state.subject='全体';return oldLogin(...args);};
+ const oldSetStudent=setStudent;setStudent=function(id){if(state.subject!=='全体')return oldSetStudent(id);state.student=id;state.compare.leftSubject='';state.compare.rightSubject='';render();};
+ const oldSubject=setSubject;setSubject=function(sub){if(state.page==='history')state.history.subject=sub==='全体'?'':sub;return oldSubject(sub);};
+ const oldRecords=records;records=function(sid=state.student,f=state.history){return oldRecords(sid,f.subject==='全体'?{...f,subject:''}:f);};
+ const oldBar=studentbar;studentbar=function(){const root=document.createElement('div');root.innerHTML=oldBar();const sel=root.querySelector('[onchange="setSubject(this.value)"]');if(sel){const opt=document.createElement('option');opt.value='全体';opt.textContent=state.page==='profile'?'全教科共通':'全教科';sel.prepend(opt);sel.value=state.subject;}return root.innerHTML;};
+ function formHTML(sid,sub){const saved=policy(sub,sid)||{},d=drafts[key(sid,sub)]||saved;return `<section class="card profile-policy-editor"><div class="section-title"><h2>${sub==='全体'?'全教科共通カルテ':esc(sub)+'の講師共有カルテ'}</h2><span class="badge">内部資料</span></div><form data-profile-policy data-student="${esc(sid)}" data-subject="${esc(sub)}"><div class="form-grid">${fields(sub).map(([name,label])=>`<label class="field">${label}<textarea name="${name}" rows="3" maxlength="12000">${esc(d[name]||'')}</textarea></label>`).join('')}</div><div class="formfooter"><span class="small muted" data-profile-save-status>${saved.updatedAt?'更新：'+esc(stamp(saved.updatedAt))+' ／ '+esc(saved.updatedBy||''):'未登録'}</span><button class="btn primary" type="submit">カルテを保存</button></div></form></section>`;}
+ const oldProfile=renderProfile;renderProfile=function(){const root=document.createElement('div');root.innerHTML=oldProfile();const section=[...root.querySelectorAll('section.card')].find(x=>x.querySelector('h2')?.textContent==='この子の指導方針');if(section)section.outerHTML=formHTML(state.student,state.subject);
+  if(state.subject==='全体'){const h=root.querySelector('.radarcard h2');if(h)h.textContent='全教科共通で育てる6つの力';const metrics=root.querySelector('.metrics');if(metrics)metrics.remove();}
+  return root.innerHTML;
+ };
+ function save(form){if(window.DebugContext?.locked||!v13Auth)return;const sid=form.dataset.student,sub=form.dataset.subject;if(!safeStudent(sid))return;const old=policy(sub,sid),next={...(old||{id:uid('p'),student:sid,subject:sub,version:0})};for(const [name]of fields(sub))next[name]=form.elements.namedItem(name).value.trim();
+  if(fields(sub).every(([name])=>(old?.[name]||'')===next[name])){toast('変更はありません。');return;}
+  next.version=(old?.version||0)+1;next.updatedAt=now();next.updatedBy=state.actor;audit('指導方針',sid,sub,'講師共有カルテを更新',old?JSON.stringify(old):'未登録',JSON.stringify(next));if(old)Object.assign(old,next);else db.policies.push(next);
+  persist();if(!storageOK){toast('保存できません。入力内容を残したまま、保存先を確認してください。');return;}delete drafts[key(sid,sub)];v8Write(storeKey,drafts);if(form.closest('dialog'))closeModal();render();toast('カルテを保存しました。');
+ }
+ document.addEventListener('input',e=>{const f=e.target.closest('form[data-profile-policy]');if(!f)return;const d={};for(const [name]of fields(f.dataset.subject))d[name]=f.elements.namedItem(name).value;drafts[key(f.dataset.student,f.dataset.subject)]=d;const ok=v8Write(storeKey,drafts);f.querySelector('[data-profile-save-status]').textContent=ok?'入力途中の内容をこの端末に保存':'端末に保存できません。画面を閉じずにカルテを保存してください。';});
+ document.addEventListener('submit',e=>{if(e.target.matches('form[data-profile-policy]')){e.preventDefault();save(e.target);}});
+ const oldPolicy=openPolicy;openPolicy=function(){if(state.subject!=='全体')return oldPolicy();modal('全教科共通カルテ',formHTML(state.student,'全体'));};
+ const oldOpenLesson=openLesson;openLesson=function(id=''){if(id||state.subject!=='全体')return oldOpenLesson(id);const before=state.subject;state.subject=v6StudentSubjects(student())[0]||'数学';try{return oldOpenLesson(id);}finally{state.subject=before;}};
+ const oldReports=toReports;toReports=function(...a){if(state.subject!=='全体')return oldReports(...a);state.subject='';try{return oldReports(...a);}finally{state.subject='全体';}};
+ window.ManabiProfileCommon={fields,save};
+})();
+
+// One in-place search control for page selectors and existing dialog forms.
+(()=>{
+ const mounted=new WeakSet();let sequence=0;
+ const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
+ function control(input,{choose,eligible=activeStudent,selected=()=>'',clear,disabled=false,key=''}){
+  if(mounted.has(input))return;mounted.add(input);input.removeAttribute('list');
+  const box=document.createElement('div');box.className='student-searchbox';box.dataset.studentSearchKey=key;
+  input.before(box);box.append(input);input.type='search';input.autocomplete='off';input.placeholder='生徒名・ふりがな・バーコード';input.dataset.inlineStudent='';input.setAttribute('aria-label','生徒を検索');input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.disabled=disabled;
+  const list=document.createElement('div');list.className='student-search-results';list.id='student-results-'+(++sequence);list.setAttribute('role','listbox');list.hidden=true;input.setAttribute('aria-controls',list.id);input.setAttribute('aria-expanded','false');
+  const current=document.createElement('div');current.className='student-search-current';
+  function refresh(){const sid=selected();current.textContent=sid&&safeStudent(sid)?'選択中：'+safeStudent(sid).name:'';if(clear&&sid){const b=document.createElement('button');b.type='button';b.className='btn small';b.textContent='解除';b.onclick=()=>{clear();refresh();};current.append(b);}}refresh();box.append(list,current);
+  let rows=[],index=-1,timer,composing=false;
+  const close=()=>{list.hidden=true;input.setAttribute('aria-expanded','false');index=-1;input.removeAttribute('aria-activedescendant');};
+  function pick(s){if(!ready()||input.disabled||!eligible(s))return;input.value='';close();choose(s);refresh();queueMicrotask(()=>{const next=input.isConnected?input:[...document.querySelectorAll('[data-student-search-key]')].find(b=>b.dataset.studentSearchKey===key)?.querySelector('input');if(next){next.value='';next.focus({preventScroll:true});}});}
+  function paint(){if(composing||input.disabled)return;const q=norm(input.value),r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students});rows=(r.matches.length?r.matches:db.students.filter(s=>!q||[s.name,s.kana,s.code,s.id].some(x=>norm(x).includes(q)))).filter(eligible).slice(0,40);list.replaceChildren();
+   for(const [i,s]of rows.entries()){const b=document.createElement('button');b.type='button';b.className='student-search-option';b.id=list.id+'-'+i;b.setAttribute('role','option');b.textContent=s.name+' ／ '+(s.code||s.id)+' ／ '+s.grade;b.onmousedown=e=>e.preventDefault();b.onclick=()=>pick(s);list.append(b);}
+   if(!rows.length){const p=document.createElement('p');p.textContent='該当する生徒がいません';list.append(p);}list.hidden=false;input.setAttribute('aria-expanded','true');index=-1;
+  }
+  input.addEventListener('focus',()=>input.value.trim()?paint():close());input.addEventListener('input',e=>{if(e.isComposing)return;paint();clearTimeout(timer);timer=setTimeout(()=>{if(!input.isConnected||composing)return;const r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students});if(r.status==='found')pick(r.matches[0]);},220);});
+  input.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer);});input.addEventListener('compositionend',()=>{composing=false;paint();input.dispatchEvent(new Event('input',{bubbles:true}));});
+  input.addEventListener('keydown',e=>{if(e.isComposing)return;if(e.key==='Escape'){close();return;}if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(list.hidden)paint();index=Math.max(0,Math.min(rows.length-1,index+(e.key==='ArrowDown'?1:-1)));[...list.children].forEach((b,i)=>b.setAttribute('aria-selected',String(i===index)));input.setAttribute('aria-activedescendant',list.id+'-'+index);list.children[index]?.scrollIntoView?.({block:'nearest'});}
+   if(e.key==='Enter'&&input.value.trim()){e.preventDefault();e.stopImmediatePropagation();clearTimeout(timer);const r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students}),s=r.status==='found'?r.matches[0]:index>=0?rows[index]:rows.length===1&&!ManabiScan.looksLikeScan(input.value,'student')?rows[0]:null;if(s)pick(s);else{paint();if(!rows.length||ManabiScan.looksLikeScan(input.value,'student'))toast(r.status==='ambiguous'?'同じ生徒番号が複数あります。候補を確認してください。':r.status==='wrong_kind'?'生徒用のバーコードを読み取ってください。':'該当する生徒が見つかりません。');}}
+  });
+  input.addEventListener('blur',()=>setTimeout(()=>{if(!box.contains(document.activeElement))close();},100));
+  return {refresh};
+ }
+ function chooseTarget(target,seat,s){
+  if(target==='desk'&&!ManabiLessonDay.canPrepare())return ManabiLessonDay.deny();
+  const changed=!v12HasRoom(s);if(!ManabiStudentSelect.moveToStudent(s))return;
+  if(target==='desk'){if(seat!==null&&!changed)replaceDeskStudent(seat,s.id);else addStudentToDesk(s.id);return;}
+  if(target==='report'){v8SaveReportEdits();if(!state.report.students.includes(s.id))state.report.students.push(s.id);state.report.confirmed=false;render();return;}
+  if(target==='daily'){state.daily.student=s.id;render();return;}
+  if(target==='notes'){extra.notes.student=s.id;render();return;}
+  setStudent(s.id);
+ }
+ function mount(){
+  if(!ready())return;
+  for(const b of document.querySelectorAll('#content [onclick*="openStudentPicker"],#modal [onclick*="openStudentPicker"]')){
+   const m=b.getAttribute('onclick').match(/^openStudentPicker\('([^']+)'(?:,\s*(null|\d+))?\)$/);if(!m)continue;const target=m[1],seat=m[2]&&m[2]!=='null'?Number(m[2]):null,key=target+':'+(seat??'all');const input=document.createElement('input');b.replaceWith(input);
+   control(input,{key,disabled:b.disabled,choose:s=>chooseTarget(target,seat,s),selected:()=>target==='profile'?state.student:target==='daily'?state.daily.student:target==='notes'?extra.notes.student:'',clear:target==='daily'?()=>{state.daily.student='';render();}:target==='notes'?()=>{extra.notes.student='';render();}:null});
+  }
+  for(const input of document.querySelectorAll('[data-manabi-student-search]')){
+   const select=input.nextElementSibling;if(select?.tagName!=='SELECT')continue;select.hidden=true;select.tabIndex=-1;select.dataset.inlineStudentSource='';
+   const widget=control(input,{key:'native:'+(select.getAttribute('onchange')||select.name),choose:s=>ManabiStudentSelect.chooseNative(input,s),selected:()=>select.value,eligible:ManabiStudentSelect.eligibleFor('select',input),clear:[...select.options].some(o=>o.value==='')?()=>{select.value='';select.dispatchEvent(new Event('change',{bubbles:true}));input.value='';}:null});select.addEventListener('change',()=>widget?.refresh());
+  }
+  for(const input of document.querySelectorAll('form[onsubmit="v6IntakeSave(event)"] input[name=code]'))control(input,{key:'intake',choose:s=>ManabiStudentSelect.chooseIntake(input,s)});
+ }
+ const oldRender=render;render=function(...a){const r=oldRender(...a);mount();return r;};
+ const oldModal=modal;modal=function(...a){const r=oldModal(...a);mount();return r;};
+ // Search controls must not shift the legacy index-based form draft fields.
+ const oldSnapshot=v8FormSnapshot;v8FormSnapshot=function(f){const controls=[...f.querySelectorAll('input,select,textarea')].filter(n=>n.type!=='file'&&n.type!=='password'&&!n.matches('[data-manabi-student-search]'));return oldSnapshot(f).filter(x=>!controls[x.i]?.matches('[data-inline-student]:not([name])')).map((x,i)=>({...x,i}));};
+ window.ManabiInlineStudents={mount};mount();
+})();
+
+(()=>{
+ const oldLogin=v13LoginSuccess;v13LoginSuccess=function(...args){const result=oldLogin(...args);state.daily.from=v16TodayJST();state.daily.to=v16TodayJST();if(state.page==='daily')render();return result;};
+ const oldHistory=historyFilters;historyFilters=function(){const root=document.createElement('div');root.innerHTML=oldHistory();const bar=root.querySelector('.toolbar');if(bar)bar.prepend(period('history'));const quick=root.querySelector('.quickbar [onclick="quickRange(\'all\')"]');if(quick)quick.textContent='全期間';return root.innerHTML;};
+ function period(page){const f=state[page],label=document.createElement('label');label.className='field';label.textContent='表示期間';const select=document.createElement('select');select.dataset.lessonPeriod=page;select.setAttribute('aria-label','表示期間');const value=!f.from&&!f.to?'all':f.from===v16TodayJST()&&f.to===v16TodayJST()?'today':'range';for(const [v,t]of [['today','当日'],['all','全期間'],['range','期間を指定']]){const o=document.createElement('option');o.value=v;o.textContent=t;o.selected=v===value;select.append(o);}label.append(select);return label;}
+ const oldDaily=renderDaily;renderDaily=function(){const root=document.createElement('div');root.innerHTML=oldDaily();root.querySelector('.v8-daily-filter .toolbar')?.prepend(period('daily'));return root.innerHTML;};
+ document.addEventListener('change',e=>{const page=e.target.dataset.lessonPeriod;if(!page)return;const f=state[page];if(e.target.value==='all')f.from=f.to='';else if(e.target.value==='today')f.from=f.to=v16TodayJST();else return;render();});
+})();
+
+// Clear a completed value before the next HID burst, even if the browser moves
+// the caret after selecting text. Human composition and note fields are untouched.
+(()=>{
+ const completed=new WeakMap();
+ const mark=input=>{if(input)completed.set(input,input.value);};
+ function reset(e){const input=e.target,old=completed.get(input);if(old===undefined||e.isComposing||e.ctrlKey||e.altKey||e.metaKey)return;if(input.value!==old){completed.delete(input);return;}input.value='';completed.delete(input);}
+ window.addEventListener('keydown',e=>{if(e.key?.length===1&&!e.isComposing&&e.keyCode!==229)reset(e);},true);
+ window.addEventListener('beforeinput',e=>{if(e.inputType==='insertText'||e.inputType==='insertFromPaste')reset(e);},true);
+ window.addEventListener('input',e=>{
+  const input=e.target;if(e.isComposing||!input?.matches?.('input')||input.matches('[data-manabi-hid]'))return;
+  let kind=input.matches('[data-mat-field=name],[data-home-field=name],[data-next-field=name],#book-search')?'material':input.matches('[data-manabi-teacher-search]')?'teacher':input.matches('[data-inline-student],[data-manabi-student-search],#scan-student,#picker-q')||window.ManabiStudentSelect?.context(input)?'student':null;
+  if(!kind)return;const items=kind==='material'?db.catalog:kind==='teacher'?db.teachers.map(t=>({...t,login_id:db.loginAccounts.find(a=>a.teacherId===t.id)?.loginId})):db.students;
+  const parts=ManabiScan.splitScanStream(input.value,{kind,items});if(parts.length<2)return;
+  if(input.id==='scan-student'){e.stopImmediatePropagation();input.value='';for(const code of parts)scanStudent(code);}else input.value=parts.at(-1);
+ },true);
+ window.ManabiScanInput={mark};
+})();
+
 /* Page-aware HID input. The off-screen receiver accepts input/IME events too;
    explicit material fields retain their own student and are never routed here. */
 (()=>{
@@ -3584,6 +3736,7 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
  }
  function finish(explicit=false){
   const value=burst||receiver?.value||'';clear();if(!value||!ready()||blocked())return;
+  const parts=ManabiScan.splitScanStream(value,{kind:state.page==='daily'?'teacher':'student',items:state.page==='daily'?db.teachers.map(t=>({...t,login_id:db.loginAccounts.find(a=>a.teacherId===t.id)?.loginId})):db.students});if(parts.length>1){for(const code of parts)dispatch(code);return;}
   const s=ManabiScan.resolveScan(value,{kind:'student',items:db.students}),t=window.ManabiTeacherScan?.resolve(value);
   if(explicit||s.matches.length||state.page==='daily'&&(t?.matches.length||ManabiScan.staffCredential(value))||/^(?:D-\d{3,}|MAT-\d{6,})$/.test(ManabiScan.decodeASCII(value)||ManabiScan.normalizeScan(value)))dispatch(value);
  }
@@ -3643,7 +3796,7 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
   const controls=document.createElement('div');controls.className='row';
   const label=document.createElement('label');label.className='field';label.textContent='教科';const select=document.createElement('select');select.setAttribute('aria-label','共有カルテの教科');
   const subjects=[...new Set(ids.flatMap(id=>[...(db.students.find(s=>s.id===id)?.subjects||[]),...(db.policies||[]).filter(p=>p.student===id).map(p=>p.subject),...(db.lessons||[]).filter(l=>l.student===id).map(l=>l.subject)]))].filter(s=>s&&s!=='全体');
-  for(const [value,text]of [['','全教科'],...subjects.map(s=>[s,s])]){const opt=document.createElement('option');opt.value=value;opt.textContent=text;select.append(opt);}label.append(select);
+  for(const [value,text]of [['全体','全教科共通'],['','全教科（教科別を含む）'],...subjects.map(s=>[s,s])]){const opt=document.createElement('option');opt.value=value;opt.textContent=text;select.append(opt);}label.append(select);
   const button=(text,fn)=>{const b=document.createElement('button');b.type='button';b.className='btn';b.textContent=text;b.onclick=fn;return b;};
   const status=document.createElement('p');status.setAttribute('role','status');
   const preview=document.createElement('div');preview.className='staff-profile-preview';

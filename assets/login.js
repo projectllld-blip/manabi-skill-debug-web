@@ -32,6 +32,7 @@ var ManabiScan = (() => {
     normalizeScan: () => normalizeScan,
     resolveScan: () => resolveScan,
     scanCandidates: () => scanCandidates,
+    splitScanStream: () => splitScanStream,
     staffCredential: () => staffCredential,
     stripStudentPrefix: () => stripStudentPrefix,
     validGTIN: () => validGTIN,
@@ -121,6 +122,33 @@ var ManabiScan = (() => {
   }
   var isComposing = (event) => !!(event.isComposing || event.keyCode === 229);
   var isTerminator = (event) => !isComposing(event) && !event.ctrlKey && !event.metaKey && !event.altKey && ["Enter", "Tab"].includes(event.key);
+  function splitScanStream(value, { kind, items = [], keys = defaultKeys[kind] || ["id"] } = {}) {
+    const raw = normalizeScan(value);
+    if (!raw || raw.length > 600 || resolveScan(raw, { kind, items, keys }).matches.length || kind === "teacher" && staffCredential(raw)) return [raw];
+    const codes = new Set(items.flatMap((item) => aliases(item, kind, keys)).filter(Boolean));
+    for (const c of [...codes]) if (/[A-Z]/.test(c)) codes.add([...c].map((x) => String(x.charCodeAt(0)).padStart(3, "0")).join(""));
+    const candidates = [...codes].filter((c) => c.length >= 3).sort((a, b) => b.length - a.length), memo = /* @__PURE__ */ new Map();
+    function split(at) {
+      if (at === raw.length) return [];
+      if (memo.has(at)) return memo.get(at);
+      const rest = raw.slice(at), options = candidates.filter((c) => rest.startsWith(c));
+      if (kind === "teacher") for (const n of [153, 96, 51, 32]) {
+        const c = rest.slice(0, n);
+        if (c.length === n && staffCredential(c)) options.push(c);
+      }
+      memo.set(at, null);
+      for (const c of options) {
+        const tail = split(at + c.length);
+        if (tail) {
+          const result = [c, ...tail];
+          memo.set(at, result);
+          return result;
+        }
+      }
+      return null;
+    }
+    return split(0) || [raw];
+  }
   function createScanGate({ now = () => Date.now(), windowMs = 650 } = {}) {
     const states = /* @__PURE__ */ new WeakMap();
     return { accept(target, value) {

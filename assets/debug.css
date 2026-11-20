@@ -57,3 +57,22 @@ dialog[open] .v9-missing-notice:not(.complete){display:block!important}
 .staff-profile-page{width:100%;max-width:720px;margin:0 auto 16px!important;padding:22px!important;min-height:0!important;box-sizing:border-box;background:white}
 .staff-profile-page svg{display:block;width:100%;height:auto;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif}
 @media print{#print-root .staff-profile-page{padding:0!important;margin:0!important;width:184mm!important;max-width:184mm!important;min-height:0!important;height:259mm!important;break-after:page;page-break-after:always}#print-root .staff-profile-page:last-child{break-after:auto;page-break-after:auto}#print-root .staff-profile-page svg{height:auto!important;width:184mm!important}}
+
+/* Two predictable touch sizes: normal actions and compact table actions. */
+@media screen{
+ :is(#content,.topbar,dialog,.v13-board-panel) button{box-sizing:border-box;font-family:inherit;font-size:14px;line-height:1.4;min-height:40px;padding:8px 12px;border-radius:8px;max-width:100%;white-space:normal;vertical-align:middle;cursor:pointer}
+ :is(#content,.topbar,dialog,.v13-board-panel) .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:14px;line-height:1.4;min-height:40px;padding:8px 12px}
+ :is(#content,dialog) :is(.row,.toolbar,.formfooter,.section-title){gap:10px;flex-wrap:wrap}
+ :is(#content,dialog) :is(input:not([type=checkbox]):not([type=radio]),select){min-height:40px;box-sizing:border-box;max-width:100%}
+ :is(#content,dialog) td .btn{font-size:13px;min-height:36px;padding:6px 10px}
+ :is(#content,dialog) button:disabled{cursor:not-allowed;opacity:.55}
+ dialog{max-width:calc(100vw - 24px);box-sizing:border-box}dialog .form-grid>*{min-width:0}
+ .student-searchbox{position:relative;flex:1 1 240px;min-width:180px;max-width:100%;text-align:left}.student-searchbox>input{width:100%}.student-search-current{font-size:12px;display:flex;align-items:center;gap:8px;margin-top:4px;overflow-wrap:anywhere}
+ .student-search-results{position:absolute;top:42px;left:0;right:0;max-height:260px;overflow-y:auto;z-index:30;background:#fff;border:1px solid #aabbb0;border-radius:8px;box-shadow:0 4px 16px #20352926;padding:4px}
+ .student-search-results[hidden]{display:none}.student-search-results .student-search-option{display:block;width:100%;text-align:left;border:0;background:#fff;min-height:44px;font-size:14px;padding:10px;border-radius:5px}
+ select[data-inline-student-source][hidden]{display:none!important}
+ .student-search-option:hover,.student-search-option[aria-selected=true]{background:#eaf3ed}.student-search-results p{padding:10px;font-size:14px}
+ .profile-policy-editor textarea{resize:vertical;width:100%;box-sizing:border-box;min-height:90px}.profile-policy-editor .form-grid{grid-template-columns:minmax(0,1fr)}.profile-policy-editor .formfooter{position:static}
+ @media(pointer:coarse){:is(#content,.topbar,dialog,.v13-board-panel) button,:is(#content,dialog) td .btn{min-height:44px}}
+ @media(max-width:800px){.studentbar>.row{width:100%}.student-searchbox{flex-basis:100%}.profilegrid{grid-template-columns:minmax(0,1fr)}:is(#content,dialog) .formfooter .btn{flex:1 1 150px}}
+}
