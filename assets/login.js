@@ -1,5 +1,5 @@
 (()=>{
- const auth=window.ManabiAuth,form=document.getElementById('login-form'),status=document.getElementById('login-status'),staffForm=document.getElementById('staff-form'),passwordForm=document.getElementById('staff-password-form');
+ const auth=window.ManabiAuth,status=document.getElementById('login-status'),staffForm=document.getElementById('staff-form'),passwordForm=document.getElementById('staff-password-form');
  const scan=staffForm.elements.barcode,panel=document.getElementById('staff-panel');
  let method='barcode',staffBusy=false;
  const say=message=>{status.textContent=message;};
@@ -13,10 +13,9 @@
  for(const m of ['password','barcode'])document.getElementById('method-'+m).onclick=()=>selectMethod(m);
  async function proceed(){
   const me=await auth.api('me');
-  if(me.staff_required){auth.clearStaff();form.hidden=true;panel.hidden=false;document.getElementById('forgot').hidden=true;selectMethod(method);return;}
+  if(me.staff_required){auth.clearStaff();panel.hidden=false;selectMethod(method);return;}
   location.replace('./app.html');
  }
- form.addEventListener('submit',async event=>{event.preventDefault();const send=form.querySelector('button');send.disabled=true;say('ログインしています…');try{const data=new FormData(form),result=await auth.client.auth.signInWithPassword({email:String(data.get('email')).trim(),password:String(data.get('password'))});form.elements.password.value='';if(result.error)throw Error('メールアドレスまたはパスワードを確認してください。');say('');await proceed();}catch(error){say(error.message);}finally{send.disabled=false;}});
  async function loginStaff(body){
   if(staffBusy)return;
   staffBusy=true;
@@ -33,7 +32,7 @@
  scan.addEventListener('input',event=>{if(event.isComposing)return;const barcode=normalizeBarcode(scan.value);if(!panel.hidden&&method==='barcode'){if(/^MAT-[0-9]{6,}$/.test(barcode))rejectBarcode();else if(isStaffBarcode(barcode))void loginStaff({barcode});}});
  scan.addEventListener('keydown',event=>{if(!event.isComposing&&event.keyCode!==229&&(event.key==='Enter'||event.key==='Tab'&&scan.value.trim())){event.preventDefault();void staffForm.onsubmit(event);}});
  passwordForm.onsubmit=event=>{event.preventDefault();if(/^MAT-/i.test(passwordForm.elements.login_id.value.normalize('NFKC').trim())){passwordForm.elements.password.value='';say('教材バーコードは講師IDとして使えません。講師IDを入力してください。');return;}return loginStaff({method:'password',login_id:passwordForm.elements.login_id.value,password:passwordForm.elements.password.value});};
- document.getElementById('change-account').onclick=async()=>{await auth.signOut();location.reload();};
  document.getElementById('forgot').onclick=()=>say('パスワードの再設定は代表へ依頼してください。');
+ selectMethod(method);
  auth.session().then(proceed).catch(error=>{if(error.status!==401)say(error.message);});
 })();
