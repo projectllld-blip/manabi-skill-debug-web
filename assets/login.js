@@ -28,7 +28,7 @@
  }
  staffForm.onsubmit=event=>{event.preventDefault();return loginStaff({barcode:normalizeBarcode(scan.value)});};
  // Readers with or without an Enter suffix and pasted card numbers use the same path.
- scan.addEventListener('input',()=>{const barcode=normalizeBarcode(scan.value);if(!panel.hidden&&method==='barcode'&&/^TL-[A-F0-9]{48}$/.test(barcode))void loginStaff({barcode});});
+ scan.addEventListener('input',()=>{const barcode=normalizeBarcode(scan.value);if(!panel.hidden&&method==='barcode'&&/^(?:TL-[A-F0-9]{48}|91[0-9]{30})$/.test(barcode))void loginStaff({barcode});});
  scan.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();void staffForm.onsubmit(event);}});
  passwordForm.onsubmit=event=>{event.preventDefault();return loginStaff({method:'password',login_id:passwordForm.elements.login_id.value,password:passwordForm.elements.password.value});};
  document.getElementById('change-account').onclick=async()=>{await auth.signOut();location.reload();};

@@ -2621,27 +2621,29 @@ var ManabiBarcode = (() => {
   var escapeHTML = (value) => value.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
   function barcodeSVG(code, small = false) {
     const text = String(code ?? "").trim().toUpperCase();
-    const staff = /^TL-[A-F0-9]{48}$/.test(text);
+    const compactStaff = /^91[0-9]{30}$/.test(text);
+    const staff = compactStaff || /^TL-[A-F0-9]{48}$/.test(text);
     if (!text || !staff && [...text].some((ch) => !CODE39_CHARS.includes(ch))) {
       return '<span class="small" style="color:#a33">\u756A\u53F7\u306B\u30D0\u30FC\u30B3\u30FC\u30C9\u975E\u5BFE\u5FDC\u6587\u5B57\u304C\u3042\u308A\u307E\u3059</span>';
     }
     let bits;
     if (staff) {
-      const values = [...text].map((ch) => ch.charCodeAt(0) - 32);
-      const check = (104 + values.reduce((sum, value, i) => sum + value * (i + 1), 0)) % 103;
-      bits = [104, ...values, check, 106].map((value) => CODE128_BITS[value]).join("");
+      const start = compactStaff ? 105 : 104;
+      const values = compactStaff ? text.match(/../g).map(Number) : [...text].map((ch) => ch.charCodeAt(0) - 32);
+      const check = (start + values.reduce((sum, value, i) => sum + value * (i + 1), 0)) % 103;
+      bits = [start, ...values, check, 106].map((value) => CODE128_BITS[value]).join("");
     } else {
       const values = [148, ...[...text].map((ch) => CODE39_PATTERNS[CODE39_CHARS.indexOf(ch)]), 148];
       bits = values.map((value) => [...value.toString(2).padStart(9, "0")].map((wide, i) => (i % 2 ? "0" : "1").repeat(wide === "1" ? 3 : 1)).join("")).join("0");
     }
     const scale = staff ? 1 : small ? 1.5 : 2.05;
-    const barHeight = staff ? 72 : small ? 42 : 62;
+    const barHeight = compactStaff ? 42 : staff ? 72 : small ? 42 : 62;
     const quiet = 10;
     const width = (bits.length + quiet * 2) * scale, height = barHeight + 8;
     const number = (n) => String(Math.round(n * 1e3) / 1e3);
     const bars = [...bits.matchAll(/1+/g)].map((match) => `<rect x="${number((quiet + match.index) * scale)}" y="4" width="${number(match[0].length * scale)}" height="${barHeight}" fill="#111"/>`).join("");
     const format = staff ? "Code128" : "Code39";
-    return `<svg class="manabi-barcode${staff ? " manabi-staff-barcode" : ""}" role="img" aria-label="\u756A\u53F7 ${escapeHTML(text)} \u306E${format}\u30D0\u30FC\u30B3\u30FC\u30C9" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${height}" width="${number(width)}" height="${height}" preserveAspectRatio="xMidYMid meet"><rect x="0" y="0" width="${number(width)}" height="${height}" fill="#fff"/>${bars}</svg>`;
+    return `<svg class="manabi-barcode${compactStaff ? " manabi-compact-staff-barcode" : staff ? " manabi-staff-barcode" : ""}" role="img" aria-label="\u756A\u53F7 ${escapeHTML(text)} \u306E${format}\u30D0\u30FC\u30B3\u30FC\u30C9" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${number(width)} ${height}" width="${number(width)}" height="${height}" preserveAspectRatio="xMidYMid meet"><rect x="0" y="0" width="${number(width)}" height="${height}" fill="#fff"/>${bars}</svg>`;
   }
   return __toCommonJS(barcode_exports);
 })();
@@ -2684,7 +2686,7 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
  document.addEventListener('keydown',event=>{
   if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
   if(!dedicated(event.target)&&!pickerCode(event.target))return;
-  event.preventDefault();event.stopImmediatePropagation();scanStudent(event.target.value);
+  event.preventDefault();event.stopImmediatePropagation();if(pickerCode(event.target)&&window.ManabiStudentSelect)ManabiStudentSelect.scanPicker(event.target.value);else scanStudent(event.target.value);
  },true);
  // Keyboard scanners without a terminator and pasted labels are accepted after
  // the complete known code has stopped changing. Unknown input remains editable.
@@ -2695,6 +2697,10 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   const input=event.target;
   inputTimer=setTimeout(()=>{if(input.isConnected&&matches(input.value).length===1)scanStudent(input.value);},220);
  },true);
+ document.addEventListener('compositionend',event=>{
+  if(!dedicated(event.target))return;clearTimeout(inputTimer);const input=event.target;
+  inputTimer=setTimeout(()=>{if(input.isConnected&&matches(input.value).length===1)scanStudent(input.value);},220);
+ },true);
  // Scanning while no text field is selected works on the home/lesson screens.
  // Never capture ordinary writing, passwords, composing text or keyboard shortcuts.
  let burst='',lastKey=0;
@@ -2703,13 +2709,187 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   if(event.defaultPrevented||!ready()||event.isComposing||event.keyCode===229||event.ctrlKey||event.metaKey||event.altKey||target?.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"])')||document.querySelector('dialog[open]')){burst='';return;}
   if(event.key==='Enter'||event.key==='Tab'){
    const value=burst;burst='';
-   if(value.length>=3&&Date.now()-lastKey<250&&matches(value).length){event.preventDefault();scanStudent(value);}
+   if(value.length>=3&&Date.now()-lastKey<250&&matches(value).length){if(window.ManabiStudentSelect){if(ManabiStudentSelect.scanInContext(value))event.preventDefault();}else{event.preventDefault();scanStudent(value);}}
    return;
   }
   if(event.key.length!==1){if(event.key!=='Shift')burst='';return;}
   const now=Date.now();if(now-lastKey>150)burst='';lastKey=now;
   burst=(burst+event.key).slice(-100);
  },true);
+})();
+
+/* Barcode input follows the current student-selection context. Free-text lesson
+   notes, credentials and the student registration form are deliberately excluded. */
+(()=>{
+ const normalize=value=>String(value??'').normalize('NFKC').trim().toUpperCase().replace(/^\][A-Z][0-9]/,'').replace(/^\*|\*$/g,'').replace(/^LLLD[:-]STUDENT[:-]/,'').replace(/^LLLD[:-]/,'').replace(/[‐‑‒–—−]/g,'-').trim();
+ const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
+ const byCode=value=>db.students.filter(s=>normalize(s.code)===normalize(value)&&normalize(value));
+ const known=value=>byCode(value).length>0;
+ const lookup=(value,names=false,announce=false,eligible=activeStudent)=>{
+  let found=byCode(value);
+  if(!found.length&&names){const q=norm(String(value).trim());found=db.students.filter(s=>q&&[s.name,s.kana].some(x=>norm(x)===q));}
+  if(found.length>1){if(announce)toast('同じ番号・名前が複数あります。生徒番号か一覧から確認してください。');return null;}
+  if(!found.length){if(announce)toast('該当する生徒が見つかりません。');return null;}
+  if(!eligible(found[0])){if(announce)toast('この画面の対象外の生徒です。在籍状態や絞り込みを確認してください。');return null;}
+  return found[0];
+ };
+ const selectLinks=new WeakMap(),mounted=new WeakSet();let sequence=0,inputTimer;
+ const handler=node=>node?.getAttribute('oninput')||'';
+ const nativeStudentSelect=node=>node.matches('select')&&(['student','studentId'].includes(node.name)||/^(?:setStudent\(this.value\)|setDaily\('student',this.value\)|extra\.examFilters\.student=this.value;render\(\)|state\.audit\.student=this.value;render\(\))$/.test(node.getAttribute('onchange')||''));
+ const context=input=>{
+  if(selectLinks.has(input))return 'select';
+  if(input?.id==='picker-q'&&extra.picker)return 'picker';
+  const code=handler(input);
+  if(code.includes('extra.roster.q=this.value'))return 'roster';
+  if(state.page==='master'&&extra.masterTab==='students'&&code.includes('extra.masterQ=this.value'))return 'master';
+  if(code.includes('extra.notes.q=this.value'))return 'notes';
+  if(code.includes('v6ui.bulkQ=this.value'))return 'bulk';
+  if(code.includes('v6ui.q=this.value'))return 'applications';
+  if(input?.name==='code'&&input.closest('form')?.getAttribute('onsubmit')==='v6IntakeSave(event)')return 'intake';
+  return null;
+ };
+ const eligibleFor=(kind,input)=>student=>{
+  if(kind==='roster'||kind==='master')return !extra.roster.enrollment||student.enrollment===extra.roster.enrollment;
+  if(kind==='notes'||kind==='audit')return true;
+  if(kind==='select'){const select=selectLinks.get(input);return activeStudent(student)||[...(select?.options||[])].some(option=>option.value===student.id);}
+  if(kind==='picker'&&extra.picker?.target!=='desk')return !extra.picker.enrollment||student.enrollment===extra.picker.enrollment;
+  return activeStudent(student);
+ };
+ function moveToStudent(student){
+  const rooms=v12StudentRooms(student);if(!rooms.length){toast('所属教室を確認してください。');return false;}
+  captureVisibleEditors();
+  if(!rooms.includes(currentRoom())){
+   const report=clone(state.report);
+   switchRoom(rooms.includes(student.school)?student.school:rooms[0]);
+   Object.assign(state.report,report);
+  }
+  return true;
+ }
+ function scanPicker(value){
+  if(!ready())return false;
+  const student=lookup(value,false,true,eligibleFor('picker')),picker=extra.picker;if(!student||!picker)return false;
+  const roomChanged=!v12HasRoom(student);
+  if(!moveToStudent(student,{reports:picker.target==='report'}))return false;
+  if(roomChanged){extra.picker={...picker,seat:null,q:'',classroom:currentRoom()};renderStudentPicker(false);}
+  chooseStudent(student.id);
+  if(document.getElementById('picker-dialog').open&&extra.picker){extra.picker.q='';const input=document.getElementById('picker-q');if(input){input.value='';updatePickerResults();input.focus({preventScroll:true});}}
+  return true;
+ }
+ function eventAllows(student,form){
+  const select=form?.querySelector('#v6-entry-event,#v6-intake-event');
+  const event=select?v6Event(select.value):null;
+  if(event&&event.room!=='両教室'&&!v12StudentRooms(student).includes(event.room)){toast('この実施回の教室に所属する生徒を選んでください。');return false;}
+  return true;
+ }
+ function chooseNative(input,student){
+  let select=selectLinks.get(input);if(!select?.isConnected||select.disabled)return false;
+  if(!eventAllows(student,select.form))return false;
+  const change=select.getAttribute('onchange');
+  if(!moveToStudent(student))return false;
+  // Dialog forms remain mounted when the room changes. Page filters are redrawn.
+  if(!select.isConnected)select=[...document.querySelectorAll('#content select')].find(s=>nativeStudentSelect(s)&&s.getAttribute('onchange')===change);
+  if(!select)return false;
+  if(![...select.options].some(o=>o.value===student.id)){const option=document.createElement('option');option.value=student.id;option.textContent=student.name+'｜'+student.code;select.append(option);}
+  select.value=student.id;select.dispatchEvent(new Event('change',{bubbles:true}));
+  if(input.isConnected)input.value=student.name;
+  toast(student.name+'さんを選択しました。');return true;
+ }
+ function applyList(kind,student,input){
+  if(kind==='bulk'){
+   const event=v8BulkEvent();
+   if(event&&event.room!=='両教室'&&!v12StudentRooms(student).includes(event.room)){toast('この実施回の教室に所属する生徒を選んでください。');return false;}
+   if(!v12HasRoom(student)&&v6ui.bulkSelected.size){toast('選択中の生徒がいます。現在の教室の申込を保存してから教室を切り替えてください。');return false;}
+  }
+  if(!moveToStudent(student))return false;
+  if(kind==='roster'||kind==='master'){
+   Object.assign(extra.roster,{q:kind==='roster'?student.code:extra.roster.q,classroom:currentRoom(),grade:'',subject:'',attribute:'',enrollment:''});
+   if(kind==='master')extra.masterQ=student.code;
+  }else if(kind==='notes'){extra.notes.student=student.id;extra.notes.q='';}
+  else if(kind==='applications'){v6ui.q=student.code;v6ui.grade='';}
+  else if(kind==='bulk'){
+   v6ui.bulkQ=student.code;v6ui.bulkGrade='';const event=v8BulkEvent();
+   if(event&&!db.qualEntries.some(r=>r.eventId===event.id&&r.studentId===student.id&&r.application!=='取消'))v6BulkToggle(student.id,true);
+  }
+  render();
+  const next=[...document.querySelectorAll('#content input')].find(node=>context(node)===kind);
+  if(next)next.focus({preventScroll:true});
+  toast(student.name+'さんを表示しました。');return true;
+ }
+ function chooseIntake(input,student){
+  const form=input.form;if(!eventAllows(student,form))return false;
+  const controls=[...form.elements].map((node,index)=>({index,name:node.name,value:node.value,checked:node.checked}));
+  if(!moveToStudent(student))return false;
+  if(!form.isConnected){const replacement=document.querySelector('#content form[onsubmit="v6IntakeSave(event)"]');if(!replacement)return false;for(const saved of controls){const node=replacement.elements[saved.index];if(node&&node.name===saved.name){node.value=saved.value;if('checked' in node)node.checked=saved.checked;}}input=replacement.querySelector('input[name="code"]');}
+  input.value=student.code;input.dataset.selectedStudent=student.id;
+  let label=input.parentElement.querySelector('[data-manabi-student-result]');if(!label){label=document.createElement('span');label.className='small';label.dataset.manabiStudentResult='';input.after(label);}label.textContent=student.name;
+  toast(student.name+'さんを選択しました。');return true;
+ }
+ function applyInput(input,explicit=false){
+  const kind=context(input);if(!kind||!ready())return false;
+  const allowName=kind==='select'||kind==='intake',student=lookup(input.value,allowName,explicit,eligibleFor(kind,input));
+  if(!student)return false;
+  if(kind==='picker')return scanPicker(input.value);
+  if(kind==='select')return chooseNative(input,student);
+  if(kind==='intake')return chooseIntake(input,student);
+  return applyList(kind,student,input);
+ }
+ function mount(){
+  for(const select of document.querySelectorAll('#content select,#modal select')){
+   if(!nativeStudentSelect(select)||mounted.has(select)||select.disabled)continue;mounted.add(select);
+   const input=document.createElement('input');input.type='search';input.className='manabi-student-search';input.placeholder='氏名・ふりがな・バーコード';input.autocomplete='off';input.setAttribute('aria-label','生徒を氏名・バーコードで検索');input.dataset.manabiStudentSearch='';
+   const list=document.createElement('datalist');list.id='manabi-student-options-'+(++sequence);input.setAttribute('list',list.id);
+   const options=()=>{const q=norm(input.value);list.replaceChildren();for(const student of db.students.filter(s=>eligibleFor('select',input)(s)&&(!q||[s.name,s.kana,s.code].some(x=>norm(x).includes(q)))).slice(0,40)){const option=document.createElement('option');option.value=student.name;option.label=student.code+' ／ '+v12StudentRooms(student).join('・');list.append(option);}};
+   input.addEventListener('input',options);options();select.before(input);select.after(list);selectLinks.set(input,select);
+  }
+  for(const input of document.querySelectorAll('#picker-q,#content input[type="search"]'))if(context(input)&&!selectLinks.has(input)){input.autocomplete='off';if(!input.placeholder.includes('バーコード'))input.placeholder=(input.placeholder?input.placeholder+' ／ ':'')+'バーコードも使用可';}
+ }
+ document.addEventListener('input',event=>{
+  const input=event.target,kind=context(input);if(!kind||event.isComposing)return;
+  clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(input.isConnected&&(known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false,eligibleFor(context(input),input)))))applyInput(input,true);},220);
+ },true);
+ document.addEventListener('compositionend',event=>{
+  const input=event.target;if(!context(input))return;
+  clearTimeout(inputTimer);inputTimer=setTimeout(()=>{if(input.isConnected&&known(input.value))applyInput(input,true);},220);
+ },true);
+ document.addEventListener('keydown',event=>{
+  if(event.isComposing||event.keyCode===229||!['Enter','Tab'].includes(event.key))return;
+  const input=event.target,kind=context(input);if(!kind)return;
+  // Preserve ordinary text search and tab navigation unless an exact student is ready.
+  const selected=known(input.value)||((kind==='select'||kind==='intake')&&lookup(input.value,true,false));
+  if(!selected&&(event.key==='Tab'||!input.value.trim()||kind!=='select'&&kind!=='intake'))return;
+  event.preventDefault();event.stopImmediatePropagation();clearTimeout(inputTimer);applyInput(input,true);
+ },true);
+ function scanInContext(value){
+  if(!ready())return false;
+  if(document.getElementById('picker-dialog')?.open&&extra.picker)return scanPicker(value);
+  const modal=document.querySelector('#modal[open]');
+  if(modal){const input=modal.querySelector('[data-manabi-student-search]');if(input){input.value=value;return applyInput(input,true);}return false;}
+  const student=lookup(value,false,true,eligibleFor(state.page));if(!student)return false;
+  if(['home','desk'].includes(state.page))return scanStudent(value);
+  if(state.page==='master'&&extra.masterTab!=='students')return false;
+  if(['roster','master','notes'].includes(state.page))return applyList(state.page,student);
+  if(state.page==='qualifications'){const input=[...document.querySelectorAll('#content input')].find(node=>['intake','bulk','applications'].includes(context(node)));if(input){input.value=value;return applyInput(input,true);}v6ui.tab='applications';return applyList('applications',student);}
+  if(!['profile','history','reports','daily','exams','audit'].includes(state.page))return false;
+  if(!moveToStudent(student,{reports:state.page==='reports'}))return false;
+  if(['profile','history'].includes(state.page))setStudent(student.id);
+  else if(state.page==='reports'){if(!state.report.students.includes(student.id))state.report.students.push(student.id);state.report.confirmed=false;render();}
+  else if(state.page==='daily'){state.daily.student=student.id;render();}
+  else if(state.page==='exams'){extra.examFilters.student=student.id;render();}
+  else if(state.page==='audit'){state.audit.student=student.id;render();}
+  else return false;
+  return true;
+ }
+ window.ManabiStudentSelect={scanPicker,scanInContext,mount};
+ const previousRender=render;render=function(...args){const out=previousRender(...args);mount();return out;};
+ // Legacy drafts address controls by position. Search helpers are UI-only and
+ // must never shift the saved fields; restoration runs before mount below.
+ const previousSnapshot=v8FormSnapshot;v8FormSnapshot=function(form){
+  const controls=[...form.querySelectorAll('input,select,textarea')].filter(node=>node.type!=='file'&&node.type!=='password');
+  return previousSnapshot(form).filter(field=>!controls[field.i]?.matches('[data-manabi-student-search]')).map((field,i)=>({...field,i}));
+ };
+ const previousModal=modal;modal=function(...args){const out=previousModal(...args);mount();return out;};
+ const previousPicker=renderStudentPicker;renderStudentPicker=function(...args){const out=previousPicker(...args);mount();return out;};
+ mount();
 })();
 
 /* Keep field names clear of DOM property names stripped by DOMPurify.
@@ -2756,4 +2936,36 @@ barcodeSVG=ManabiBarcode.barcodeSVG;
   if(!storageOK)return;
   closeModal();render();toast('掲示板に反映しました。');
  };
+})();
+
+// Keep the existing previous-lesson controls and duplicate them beside each target.
+(()=>{
+ const previousRender=renderEntry;
+ const actions={materials:'前回の教材セットを使う',homework:'前回の宿題教材を使う',plan:'次回方針を今回の予定へ'};
+ const button=kind=>`<div class="row manabi-lesson-shortcut" style="margin:7px 0"><button type="button" class="btn small" data-copy-previous="${kind}">${actions[kind]}</button></div>`;
+ renderEntry=function(d,token){
+  let html=previousRender(d,token);
+  if(!html.includes('data-editor=')||!prevLesson(d))return html;
+  // The lesson editor is shared by the single-record dialog and every desk seat.
+  const planStart=html.indexOf('<label class="field">今回の予定');
+  if(planStart>=0){const end=html.indexOf('</label>',planStart);if(end>=0)html=html.slice(0,end+8)+button('plan')+html.slice(end+8);}
+  for(const [kind,heading]of [['materials','<b>使用教材・範囲</b>'],['homework','<b>今回の宿題・教材</b>']]){
+   const start=html.indexOf(heading),end=start<0?-1:html.indexOf('</div>',start);
+   if(end>=0)html=html.slice(0,end+6)+button(kind)+html.slice(end+6);
+  }
+  return html;
+ };
+ document.addEventListener('click',event=>{
+  const button=event.target.closest?.('button[data-copy-previous]'),form=button?.closest('form[data-editor]');
+  if(!form)return;
+  event.preventDefault();
+  if(window.DebugContext?.locked)return;
+  const kind=button.dataset.copyPrevious,token=form.dataset.editor;
+  if(!Object.hasOwn(actions,kind)||!/^(modal|ws\d+)$/.test(token))return;
+  const positions=[];for(let node=form.parentElement;node;node=node.parentElement)positions.push([node,node.scrollTop,node.scrollLeft]);
+  // copyPrevious captures the current form before changing only the requested part.
+  copyPrevious(token,kind);
+  editorRoot(token)?.querySelector(`[data-copy-previous="${kind}"]`)?.focus({preventScroll:true});
+  for(const [node,top,left]of positions)if(node.isConnected){node.scrollTop=top;node.scrollLeft=left;}
+ });
 })();

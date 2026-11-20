@@ -4,3 +4,7 @@
 .manabi-card-barcode{overflow-x:auto;background:#fff;padding:8px 0}
 .manabi-staff-barcode{display:block;width:616px;min-width:616px;max-width:none;height:80px}
 @media print{.manabi-card-barcode{overflow:visible}.manabi-staff-barcode{width:170mm;min-width:0;max-width:100%;height:auto}}
+
+.staff-cards-dialog{width:min(860px,96vw)}
+.staff-cards-preview{overflow:auto;margin-top:14px}.staff-cards-preview .staff-card-page{width:188mm;min-height:274mm;padding:0;margin:0;background:#fff}.staff-card-page .scan-label-grid{gap:7px}.staff-scan-label{padding:6px 8px;height:102px}.staff-scan-label .scan-student{margin-top:0}.staff-scan-label .scan-code{letter-spacing:0}.staff-scan-label .manabi-compact-staff-barcode{display:block;width:100%;min-width:0;max-width:100%;height:44px}
+@media print{#print-root .staff-card-page{width:100%;padding:0;box-shadow:none}#print-root .staff-card-page:last-child{break-after:auto;page-break-after:auto}.staff-scan-label .manabi-compact-staff-barcode{width:100%;min-width:0;height:44px}}
