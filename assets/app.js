@@ -3688,11 +3688,11 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
  window.ManabiProfileCommon={fields,save};
 })();
 
-// One in-place search control for page selectors and existing dialog forms.
+// In-place selectors, except the lesson desk's original multi-select popup.
 (()=>{
- const mounted=new WeakSet();let sequence=0,restoringFocus=false;
+ const mounted=new WeakSet();let sequence=0;
  const ready=()=>!window.DebugContext?.locked&&!!v13Auth?.teacherId;
- function control(input,{choose,eligible=activeStudent,selected=()=>'',clear,disabled=false,key='',tapList=false}){
+ function control(input,{choose,eligible=activeStudent,selected=()=>'',clear,disabled=false,key=''}){
   if(mounted.has(input))return;mounted.add(input);input.removeAttribute('list');
   const box=document.createElement('div');box.className='student-searchbox';box.dataset.studentSearchKey=key;
   input.before(box);box.append(input);input.type='search';input.autocomplete='off';input.placeholder='生徒名・ふりがな・バーコード';input.dataset.inlineStudent='';input.setAttribute('aria-label','生徒を検索');input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.disabled=disabled;
@@ -3701,12 +3701,12 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
   function refresh(){const sid=selected();current.textContent=sid&&safeStudent(sid)?'選択中：'+safeStudent(sid).name:'';if(clear&&sid){const b=document.createElement('button');b.type='button';b.className='btn small';b.textContent='解除';b.onclick=()=>{clear();refresh();};current.append(b);}}refresh();box.append(list,current);
   let rows=[],index=-1,timer,composing=false;
   const close=()=>{list.hidden=true;input.setAttribute('aria-expanded','false');index=-1;input.removeAttribute('aria-activedescendant');};
-  function pick(s){if(!ready()||input.disabled||!eligible(s))return;input.value='';close();choose(s);refresh();queueMicrotask(()=>{const next=input.isConnected?input:[...document.querySelectorAll('[data-student-search-key]')].find(b=>b.dataset.studentSearchKey===key)?.querySelector('input');if(next){next.value='';restoringFocus=true;try{next.focus({preventScroll:true});}finally{restoringFocus=false;}}});}
-  function paint(){if(composing||input.disabled)return;const q=norm(input.value),r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students});rows=(r.matches.length?r.matches:db.students.filter(s=>!q||[s.name,s.kana,s.code,s.id].some(x=>norm(x).includes(q)))).filter(eligible).filter(s=>q||!tapList||v12HasRoom(s));if(!tapList)rows=rows.slice(0,40);list.replaceChildren();
+  function pick(s){if(!ready()||input.disabled||!eligible(s))return;input.value='';close();choose(s);refresh();queueMicrotask(()=>{const next=input.isConnected?input:[...document.querySelectorAll('[data-student-search-key]')].find(b=>b.dataset.studentSearchKey===key)?.querySelector('input');if(next){next.value='';next.focus({preventScroll:true});}});}
+  function paint(){if(composing||input.disabled)return;const q=norm(input.value),r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students});rows=(r.matches.length?r.matches:db.students.filter(s=>!q||[s.name,s.kana,s.code,s.id].some(x=>norm(x).includes(q)))).filter(eligible).slice(0,40);list.replaceChildren();
    for(const [i,s]of rows.entries()){const b=document.createElement('button');b.type='button';b.className='student-search-option';b.id=list.id+'-'+i;b.setAttribute('role','option');b.textContent=s.name+' ／ '+(s.code||s.id)+' ／ '+s.grade;b.onmousedown=e=>e.preventDefault();b.onclick=()=>pick(s);list.append(b);}
    if(!rows.length){const p=document.createElement('p');p.textContent='該当する生徒がいません';list.append(p);}list.hidden=false;input.setAttribute('aria-expanded','true');index=-1;
   }
-  input.addEventListener('focus',()=>input.value.trim()||tapList&&!restoringFocus?paint():close());input.addEventListener('click',()=>{if(tapList)paint();});input.addEventListener('input',e=>{if(e.isComposing)return;paint();clearTimeout(timer);timer=setTimeout(()=>{if(!input.isConnected||composing)return;const r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students});if(r.status==='found')pick(r.matches[0]);},220);});
+  input.addEventListener('focus',()=>input.value.trim()?paint():close());input.addEventListener('input',e=>{if(e.isComposing)return;paint();clearTimeout(timer);timer=setTimeout(()=>{if(!input.isConnected||composing)return;const r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students});if(r.status==='found')pick(r.matches[0]);},220);});
   input.addEventListener('compositionstart',()=>{composing=true;clearTimeout(timer);});input.addEventListener('compositionend',()=>{composing=false;paint();input.dispatchEvent(new Event('input',{bubbles:true}));});
   input.addEventListener('keydown',e=>{if(e.isComposing)return;if(e.key==='Escape'){close();return;}if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();if(list.hidden)paint();index=Math.max(0,Math.min(rows.length-1,index+(e.key==='ArrowDown'?1:-1)));[...list.children].forEach((b,i)=>b.setAttribute('aria-selected',String(i===index)));input.setAttribute('aria-activedescendant',list.id+'-'+index);list.children[index]?.scrollIntoView?.({block:'nearest'});}
    if(e.key==='Enter'&&(input.value.trim()||index>=0)){e.preventDefault();e.stopImmediatePropagation();clearTimeout(timer);const r=ManabiScan.resolveScan(input.value,{kind:'student',items:db.students}),s=r.status==='found'?r.matches[0]:index>=0?rows[index]:rows.length===1&&!ManabiScan.looksLikeScan(input.value,'student')?rows[0]:null;if(s)pick(s);else{paint();if(!rows.length||ManabiScan.looksLikeScan(input.value,'student'))toast(r.status==='ambiguous'?'同じ生徒番号が複数あります。候補を確認してください。':r.status==='wrong_kind'?'生徒用のバーコードを読み取ってください。':'該当する生徒が見つかりません。');}}
@@ -3728,10 +3728,9 @@ function manabiEntryTeacher(){return v13LoggedTeacher()?.name||(state.actor.incl
   if(state.page==='desk')for(const b of document.querySelectorAll('#content button[onclick="navigate(\'master\')"]'))b.remove();
   for(const b of document.querySelectorAll('#content [onclick*="openStudentPicker"],#modal [onclick*="openStudentPicker"]')){
    const m=b.getAttribute('onclick').match(/^openStudentPicker\('([^']+)'(?:,\s*(null|\d+))?\)$/);if(!m)continue;const target=m[1],seat=m[2]&&m[2]!=='null'?Number(m[2]):null,key=target+':'+(seat??'all');
-   // A collapsed seat is narrower than the search field. Expand it first.
-   if(target==='desk'&&seat!==null&&b.closest('.desk-panel.is-collapsed')){b.removeAttribute('onclick');b.onclick=()=>{if(!ready()||b.disabled)return;toggleDeskCollapse(seat);document.querySelector('[data-student-search-key="'+key+'"] input')?.focus({preventScroll:true});};continue;}
+   if(target==='desk')continue;
    const input=document.createElement('input');b.replaceWith(input);
-   control(input,{key,tapList:target==='desk',disabled:b.disabled,choose:s=>chooseTarget(target,seat,s),selected:()=>target==='profile'?state.student:target==='daily'?state.daily.student:target==='notes'?extra.notes.student:'',clear:target==='daily'?()=>{state.daily.student='';render();}:target==='notes'?()=>{extra.notes.student='';render();}:null});
+   control(input,{key,disabled:b.disabled,choose:s=>chooseTarget(target,seat,s),selected:()=>target==='profile'?state.student:target==='daily'?state.daily.student:target==='notes'?extra.notes.student:'',clear:target==='daily'?()=>{state.daily.student='';render();}:target==='notes'?()=>{extra.notes.student='';render();}:null});
   }
   for(const input of document.querySelectorAll('[data-manabi-student-search]')){
    const select=input.nextElementSibling;if(select?.tagName!=='SELECT')continue;select.hidden=true;select.tabIndex=-1;select.dataset.inlineStudentSource='';
