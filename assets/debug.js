@@ -137,6 +137,8 @@
 
 // Keep action feedback inside the active dialog's top layer.
 (()=>{
+ // The main dialog is reused by unrelated forms. Its previous warning is not.
+ if(typeof modal==='function'){const previousModal=modal;modal=function(...args){document.querySelectorAll('#modal > .production-dialog-status').forEach(n=>n.remove());return previousModal(...args);};}
  const previous=toast;
  toast=function(message){
   const dialogs=[...document.querySelectorAll('dialog[open]')],board=document.querySelector('.v13-board-panel'),shade=board?.closest('.v13-board-shade');const target=dialogs.at(-1)||(shade&&!shade.hidden&&getComputedStyle(shade).display!=='none'?board:null);

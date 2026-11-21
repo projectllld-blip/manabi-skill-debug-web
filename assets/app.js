@@ -3302,6 +3302,58 @@ ${x.text}`).join("\n\n"));
  };
 })();
 
+// Keep browser property names out of form controls. The stored student schema
+// and the legacy draft key/field order remain unchanged.
+(()=>{
+ const manager=()=>window.DebugContext?.user?['system_admin','classroom_manager'].includes(DebugContext.user.role):canManage();
+ function allowed(){if(window.DebugContext?.locked)return false;if(manager())return true;toast('生徒の登録・編集は教室長または代表へ依頼してください。');return false;}
+ openStudentForm=function(id=''){
+  if(!allowed())return;
+  const s=id?safeStudent(id):null;if(id&&!s){toast('生徒が見つかりません。最新の一覧を確認してください。');return;}
+  const primary=s?.school||currentRoom(),rooms=s?v12StudentRooms(s):[currentRoom()];
+  modal(id?'生徒マスター・所属教室を編集':'生徒を新規登録',`
+   <form id="v12-student-form" data-student-id="${esc(id)}" onsubmit="v12SaveStudent(event,'${esc(id)}')">
+    <div class="notice info mb">教科登録は不要です。移籍するときは「主所属教室だけに移籍」、両教室で使うときは「両教室に所属」を選択できます。</div>
+    <div class="form-grid">
+     <label class="field">氏名（必須）<input name="student_name" maxlength="60" required value="${esc(s?.name||'')}"></label>
+     <label class="field">ふりがな（必須）<input name="student_kana" maxlength="80" required value="${esc(s?.kana||'')}"></label>
+     <label class="field">学年<select name="student_grade">${GRADES.map(g=>option(g,g,s?.grade||'中学1年')).join('')}</select></label>
+     <label class="field">主所属教室<select name="student_primaryRoom" onchange="v12EnsureRoom(this.value)">${CLASSROOMS.map(c=>option(c,c,primary)).join('')}</select></label>
+     <label class="field">学校名<input name="student_schoolName" maxlength="80" value="${esc(s?.schoolName||'')}"></label>
+     <label class="field">生徒番号（空欄なら自動採番）<input name="student_code" maxlength="30" value="${esc(s?.code||'')}"></label>
+     <label class="field">在籍状態<select name="student_enrollment">${['在籍','休塾','退塾'].map(x=>option(x,x,s?.enrollment||'在籍')).join('')}</select></label>
+     <label class="field">属性・目的<input name="student_attributes" maxlength="160" value="${esc((s?.attributes||[]).join('、'))}"></label>
+    </div>
+    <div class="fieldgroup mt"><b>表示対象の教室（複数選択可）</b><div class="v12-class-checks">${CLASSROOMS.map(c=>`<label><input name="student_rooms" type="checkbox" value="${esc(c)}" ${rooms.includes(c)?'checked':''}>${esc(c)}</label>`).join('')}</div>
+     <div class="row"><button type="button" class="btn small" onclick="v12SetRoomsPreset('only')">主所属教室だけに移籍</button><button type="button" class="btn small" onclick="v12SetRoomsPreset('both')">両教室に所属</button></div>
+     <p class="tiny muted mt">過去の授業履歴や取得級はそのまま残ります。両教室に表示しても二重登録にはなりません。</p>
+    </div>
+    <div class="formfooter"><button type="button" class="btn" onclick="closeModal()">戻る</button><button type="submit" class="btn primary">生徒情報を保存</button></div>
+   </form>`);
+ };
+ v12EnsureRoom=function(room){const input=[...document.querySelectorAll('#v12-student-form [name="student_rooms"]')].find(x=>x.value===room);if(input)input.checked=true;};
+ v12SetRoomsPreset=function(mode){const form=document.getElementById('v12-student-form');if(!form)return;const primary=form.elements.student_primaryRoom.value;form.querySelectorAll('[name="student_rooms"]').forEach(x=>x.checked=mode==='both'||x.value===primary);v8SaveModal();};
+ v12SaveStudent=function(event,id=''){
+  event.preventDefault();if(!allowed())return;
+  const form=event.currentTarget?.matches?.('#v12-student-form')?event.currentTarget:event.target;
+  if(!form?.matches?.('#v12-student-form')||!form.isConnected)return;
+  if(!form.checkValidity()){form.reportValidity();return;}
+  const f=new FormData(form),read=k=>String(f.get('student_'+k)||'').trim(),oldId=form.dataset.studentId||id,old=db.students.find(s=>s.id===oldId),name=read('name'),kana=read('kana'),main=read('primaryRoom'),rooms=[...new Set(f.getAll('student_rooms'))];
+  if(oldId&&!old){toast('生徒が見つかりません。入力内容を控えて一覧を更新してください。');return;}
+  if(!name||!kana){toast('氏名・ふりがなを入力してください。');return;}
+  if(!CLASSROOMS.includes(main)||rooms.some(r=>!CLASSROOMS.includes(r))||!rooms.includes(main)){toast('主所属教室を表示対象に含めてください。');return;}
+  let code=read('code');if(code&&!/^[A-Z0-9-]+$/i.test(code)){toast('生徒番号は英数字・ハイフンで指定してください。');return;}
+  if(!code){let n=db.students.length+1;while(db.students.some(s=>String(s.code).toUpperCase()==='D-'+String(n).padStart(3,'0')))n++;code='D-'+String(n).padStart(3,'0');}
+  if(db.students.some(s=>s.id!==oldId&&String(s.code).toUpperCase()===code.toUpperCase())){toast('同じ生徒番号があります。別の番号にしてください。');return;}
+  const item={...(old||{}),id:old?.id||uid('student'),name,kana,grade:read('grade'),school:main,classrooms:rooms,schoolName:read('schoolName'),code,enrollment:read('enrollment')||'在籍',attributes:splitTags(read('attributes')),subjects:old?.subjects||[],createdAt:old?.createdAt||now(),updatedAt:now()};
+  audit('生徒登録',item.id,'',old?'生徒情報・所属教室を変更':'生徒を登録',old?clone(old):'新規',clone(item));
+  if(old)db.students[db.students.indexOf(old)]=item;else db.students.push(item);
+  // A failed local outbox write must leave the form open; retry the same ID.
+  form.dataset.studentId=item.id;persist();if(!storageOK)return;
+  closeModal();render();toast('生徒と所属教室を保存しました。');
+ };
+})();
+
 // Keep the existing previous-lesson controls and duplicate them beside each target.
 (()=>{
  const previousRender=renderEntry;
