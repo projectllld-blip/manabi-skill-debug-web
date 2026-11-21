@@ -70,6 +70,8 @@ dialog[open] .v9-missing-notice:not(.complete){display:block!important}
  .student-searchbox{position:relative;flex:1 1 240px;min-width:180px;max-width:100%;text-align:left}.student-searchbox>input{width:100%}.student-search-current{font-size:12px;display:flex;align-items:center;gap:8px;margin-top:4px;overflow-wrap:anywhere}
  .student-search-results{position:absolute;top:42px;left:0;right:0;max-height:260px;overflow-y:auto;z-index:30;background:#fff;border:1px solid #aabbb0;border-radius:8px;box-shadow:0 4px 16px #20352926;padding:4px}
  .student-search-results[hidden]{display:none}.student-search-results .student-search-option{display:block;width:100%;text-align:left;border:0;background:#fff;min-height:44px;font-size:14px;padding:10px;border-radius:5px}
+ .desk-panel .student-search-results{position:static;margin-top:4px}
+ .desk-empty{height:auto;min-height:540px;box-sizing:border-box}.desk-empty .student-searchbox{flex:0 0 auto;width:100%}
  select[data-inline-student-source][hidden]{display:none!important}
  .student-search-option:hover,.student-search-option[aria-selected=true]{background:#eaf3ed}.student-search-results p{padding:10px;font-size:14px}
  .profile-policy-editor textarea{resize:vertical;width:100%;box-sizing:border-box;min-height:90px}.profile-policy-editor .form-grid{grid-template-columns:minmax(0,1fr)}.profile-policy-editor .formfooter{position:static}
